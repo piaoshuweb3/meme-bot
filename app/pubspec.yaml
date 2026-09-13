@@ -16,6 +16,8 @@ dependencies:
   http: ^1.2.2
   # 令牌只存平台安全区（Android Keystore / iOS Keychain）
   flutter_secure_storage: ^9.2.2
+  # 高风险操作的生物识别二次确认（Android BiometricPrompt / iOS Face ID+Touch ID）
+  local_auth: ^2.3.0
   # intl 版本交由 flutter_localizations 约束，避免版本冲突
   intl: any
 

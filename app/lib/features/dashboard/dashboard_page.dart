@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/api_client.dart';
+import '../../core/biometric_guard.dart';
 import '../../core/realtime_hub.dart';
 import '../../l10n/app_localizations.dart';
 
@@ -17,6 +18,9 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
+  /// 高风险操作（熔断/恢复）需二次确认：生物识别优先，降级为显式对话框。
+  final _guard = BiometricGuard();
+
   Map<String, dynamic>? _health;
   String? _error;
   bool _busy = false;
@@ -68,6 +72,15 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Future<void> _toggle(bool pause) async {
     final l10n = AppLocalizations.of(context);
+
+    // 二次确认：熔断/恢复会直接影响所有交易，属高风险操作
+    final approved = await _guard.confirm(
+      context,
+      reason: pause ? l10n.riskPause : l10n.riskResume,
+      actionLabel: pause ? l10n.riskPause : l10n.riskResume,
+    );
+    if (!approved) return;
+
     setState(() => _busy = true);
     try {
       if (pause) {

@@ -105,10 +105,10 @@ CI（`.github/workflows/ci.yml`）在每次推送/PR 重复上述检查（后端
 | 成交活跃度倍数 | 近似 | 用 `volume24h / liquidity` 近似，真实实现需要时序库滚动均值 |
 | WebSocket 实时推送 | ✅ 已完成 | `internal/ws` Hub + `cmd/bot/ws_pump.go` 事件泵（信号 2s / 持仓 5s 快照 diff、告警扇出）+ 前端 `useRealtime`（轮询保留为降级）；5 个单测 + node 客户端实测 |
 | Flutter 实时推送 + 安全存储 | ✅ 已完成 | `RealtimeHub`（全局单连接 + 指数退避重连）+ `SecureStore`（令牌存 Android Keystore / iOS Keychain，不可用降级内存，绝不落盘）；语言与后端地址持久化；三页接入实时事件 |
-| Flutter 生物识别二次确认 | 未实现 | 高风险操作（平仓/改风控参数）的二次确认仍待接入 |
+| Flutter 生物识别二次确认 | ✅ 已完成 | `local_auth` + `BiometricGuard`（设备不支持时降级为显式确认对话框，绝不静默放行）；已接入熔断/恢复操作 |
 | 回测引擎 | ✅ 已完成 | `internal/backtest`（复用实盘策略与风控、事件时间驱动时钟、滑点/手续费/权益曲线/最大回撤）+ `cmd/backtest` CLI（`-emit-sample` / `-events` / `-out`）；6 个单测；已实测跑通 |
-| Grafana 面板 | 未实现 | `/metrics` 已就绪，缺仪表盘配置 |
-| x402 微支付客户端 | 未实现 | 数据库表（`x402_payments`）与迁移已就绪 |
+| Grafana 面板 | ✅ 已完成 | `deploy/grafana/`（数据源 + 看板 provisioning）与 8 面板看板 JSON（熔断/持仓/权益/WS + 信号漏斗/订单/告警/支付回调速率）；compose 新增 grafana 服务（默认 3001） |
+| x402 微支付客户端 | ✅ 已完成 | `internal/payment`：402 要求解析（accepts/单对象）、自动支付并重试、**EIP-3009（USDC）授权签名**、单次金额上限安全阀；6 个单测（含签名可恢复与端到端 402） |
 | 支付渠道对接 | ✅ 已打通（待接真实渠道） | `POST /api/v1/payments/webhook` 已注册：HMAC-SHA256 验签 + 时间戳防重放 + 幂等激活 + 返佣；实测首次回调 `commissioned=true`、重放 `deduped=true` |
 
 ### 4.3 环境残留
@@ -134,6 +134,6 @@ CI（`.github/workflows/ci.yml`）在每次推送/PR 重复上述检查（后端
 ## 6. 建议的下一步
 
 1. **本地联调**：`make infra && make migrate && make run`，配置 `MEMEBOT_WATCHLIST=base:<池子地址>` 观察 dry_run 下的完整链路（安全过滤 → 流动性 → 大额买入 → 跟风确认 → 风控 → 模拟下单 → 告警 → 前端实时推送）。
-2. **补 Stage 6 剩余项**：Grafana 面板、x402 客户端、Flutter 生物识别二次确认（Solana 签名、V3 解析、WebSocket/App 实时推送、安全存储、回测引擎均已完成）。
+2. **剩余完善项**：地址画像真实成本基准与成交活跃度倍数（需时序库滚动均值）、Solana 事件金额级解析（需 Geyser/Jupiter）、支付渠道真实对接（回调与验签已就绪）。
 3. **接入真实收款**：注册支付回调路由（`/api/v1/payments/webhook`，需验签），对接链上 USDC 或 Stripe。
 4. **上线前**：按 `docs/RUNBOOK.md` 第 6 节清单逐项确认，再切 `live` 并用最小仓位灰度。

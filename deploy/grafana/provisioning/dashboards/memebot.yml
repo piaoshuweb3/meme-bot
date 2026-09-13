@@ -1,0 +1,14 @@
+# 看板自动加载（dashboard JSON 见 deploy/grafana/dashboards/）
+apiVersion: 1
+
+providers:
+  - name: memebot
+    orgId: 1
+    folder: "meme-bot"
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

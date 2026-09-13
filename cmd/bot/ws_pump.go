@@ -7,6 +7,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"meme-bot/internal/metrics"
 	"meme-bot/internal/model"
 	"meme-bot/internal/strategy"
 	"meme-bot/internal/ws"
@@ -21,6 +22,7 @@ func wsEventPump(
 	hub *ws.Hub,
 	engine *strategy.SignalEngine,
 	positions model.PositionStore,
+	reg *metrics.Registry,
 	log *zap.Logger,
 ) {
 	if hub == nil || engine == nil {
@@ -55,6 +57,12 @@ func wsEventPump(
 				seenSignals = next
 			}
 		case <-posTicker.C:
+			// 把实时通道的连接数与丢弃数暴露到 /metrics（Grafana 面板可用）
+			if reg != nil {
+				stats := hub.Stats()
+				reg.Set("memebot_ws_clients", float64(stats.Clients))
+				reg.Set("memebot_ws_dropped_total", float64(stats.Dropped))
+			}
 			if positions == nil {
 				continue
 			}

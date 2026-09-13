@@ -266,7 +266,7 @@ func main() {
 	}()
 
 	// ---- 事件泵：信号/持仓变化实时推送 ----
-	go wsEventPump(ctx, hub, engine, positions, log)
+	go wsEventPump(ctx, hub, engine, positions, reg, log)
 
 	// ---- 信号衰减扫描 ----
 	go decayLoop(ctx, engine, alertSink, log)

@@ -1,0 +1,14 @@
+# Grafana 数据源：指向容器内 Prometheus
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      timeInterval: 15s
+      # 与 prometheus.yml 的 scrape_interval 保持一致，避免 rate() 计算偏差
+      httpMethod: POST

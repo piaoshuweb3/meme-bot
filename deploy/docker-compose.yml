@@ -66,6 +66,26 @@ services:
     restart: unless-stopped
     profiles: ["full"]
 
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: memebot-grafana
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-memebot}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    ports:
+      # 3000 被 Web 面板占用，故 Grafana 默认映射到 3001
+      - "${GRAFANA_PORT:-3001}:3000"
+    restart: unless-stopped
+    profiles: ["full"]
+
   prometheus:
     image: prom/prometheus:latest
     container_name: memebot-prometheus
@@ -79,3 +99,4 @@ services:
 volumes:
   pgdata:
   redisdata:
+  grafanadata:
