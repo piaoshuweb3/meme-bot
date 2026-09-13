@@ -14,9 +14,9 @@
 | Go 后端 | `cmd/`（bot / migrator / worker）、`internal/`（16 个业务包）、`migrations/`（3 个 SQL） |
 | 配置 | `configs/config.yaml`、`configs/chains.yaml`、`.env.example`（全部为占位符，无任何真实密钥） |
 | 部署 | `deploy/docker-compose.yml`、`deploy/Dockerfile`、`deploy/prometheus.yml` |
-| 前端 | `web/`（Next.js 15 App Router + TS + Tailwind，5 个页面） |
-| 移动端 | `app/`（Flutter，总览/信号/持仓三页 + API 客户端） |
-| 工程化 | `Makefile`、`scripts/verify.sh`、`.gitignore`、`README.md` |
+| 前端 | `web/`（Next.js 15 App Router + TS + Tailwind，6 个页面，zh-CN / en-US 国际化） |
+| 移动端 | `app/`（Flutter，总览/信号/持仓三页 + API 客户端 + ARB 双语） |
+| 工程化 | `Makefile`、`scripts/verify.sh`、`.gitignore`、`.github/workflows/ci.yml`、`README.md` |
 
 ---
 
@@ -40,7 +40,7 @@
 | Agent 层：循环 + 工具 + 记忆 + 风控钩子 | `internal/agent/`（`core.go` / `tool.go` / `llm.go` / `airdrop.go`） |
 | 可观测性 | `internal/metrics/metrics.go`（Prometheus 文本格式，自实现）、结构化 zap 日志 |
 | 部署与运维 | `deploy/`、`Makefile`、`docs/RUNBOOK.md` |
-| 展示端 | `web/`（Dashboard/Admin）、`app/`（Flutter） |
+| 展示端 | `web/`（Dashboard/Admin，双语）、`app/`（Flutter，双语） |
 
 ---
 
@@ -61,6 +61,9 @@ go build ./...
 
 # 前端
 cd web && npm install && npm run typecheck && npm run build
+
+# 移动端
+cd app && flutter pub get && flutter analyze
 ```
 
 单元测试覆盖（无需数据库/网络）：
@@ -72,18 +75,24 @@ cd web && npm install && npm run typecheck && npm run build
 
 ## 4. 已知限制（诚实清单）
 
-### 4.1 本会话未完成编译验证（环境限制）
+### 4.1 编译与构建验证（已完成）
 
-宿主沙箱**禁止在项目目录执行任何写类命令**：`go mod tidy`、`go build`、`gofmt`、`cp`、`mkdir` 全部被权限守卫拒绝，
-即使声明 `additional_write_dirs` 或改用只读子代理亦不可行（已多次探测确认）。
+**本机真实验证已通过**（go1.25.4 / Node 24 / Flutter stable）：
 
-因此：**Go 代码尚未跑过编译器**。已采取的降风险措施：
-1. 依赖面收窄到 9 个核心库（去掉 telebot / solana-go / cron / prometheus client / jwt 库，改为标准库实现）；
-2. 所有跨模块交互由 `internal/model` 契约约束，并加了编译期接口断言（`var _ model.XXX = (*Impl)(nil)`）；
-3. 逐文件复核 import 使用与变量使用（已修正 `expectedOut`、`cap_`、`sync`/`pgx` 占位等问题）；
-4. 核心逻辑有单测覆盖。
+| 检查 | 命令 | 结果 |
+|------|------|------|
+| 依赖解析 / 格式门禁 / 静态检查 / 单测 / 编译 | `bash scripts/verify.sh` | ✅ 全绿（首次执行时修复了 3 个编译错误 + 1 个测试断言） |
+| 单元测试 | `go test ./...` | ✅ internal/address、internal/alert、internal/risk 全部通过 |
+| 前端生产构建 | `npm run build` | ✅ Next.js 15.5.25，8 个静态页面预渲染 |
+| 移动端静态分析 | `flutter analyze` | ✅ No issues found |
 
-**请优先执行 `bash scripts/verify.sh`**，若有编译错误，把报错贴回即可快速修复。
+首次验证修复的问题（均已提交）：
+1. `internal/chain/base` 引用未定义的 `aggregator.Client` 接口、`zap.String` 传入 `common.Address` 类型不匹配；
+2. `cmd/bot` 的 executor 未接入导致 "declared and not used"——顺带把「信号 → 确认 → 风控 → 执行」链路真正接通，并新增按链上真实 decimals 换算金额的 `toBaseUnits`；
+3. `splitAction` 未处理命令的前导 `/`，导致 `TestSplitAction` 失败；
+4. 前端构建暴露的问题：Next.js 15 页面文件禁止额外导出、字典 `as const` 类型过窄、多 lockfile 导致构建根目录误判；同时把 next 从存在漏洞的 15.1.6 升级到 15.5.25。
+
+CI（`.github/workflows/ci.yml`）在每次推送/PR 重复上述检查（后端额外跑 `-race`）。
 
 ### 4.2 功能层面的未完成项
 
@@ -102,7 +111,8 @@ cd web && npm install && npm run typecheck && npm run build
 
 ### 4.3 环境残留
 
-探测子代理在 workspace 内创建了 `.scratch/probe-workspace.txt`；因写权限被拦无法删除，可手动清理（不影响项目）。
+无项目内残留（`bin/`、`web/node_modules`、`web/.next`、`app/.dart_tool` 均由 `.gitignore` 排除，不会进入仓库）。
+原始需求文书 `MEME.docx` 已从索引移除并加入 `.gitignore`（如需提交：删除 `.gitignore` 中的 `MEME.docx`/`*.docx` 两行后 `git add -f MEME.docx`）。
 
 ---
 
@@ -121,7 +131,7 @@ cd web && npm install && npm run typecheck && npm run build
 
 ## 6. 建议的下一步
 
-1. **跑通编译**：`bash scripts/verify.sh`，修掉编译错误（预期为少量类型/导入问题）。
-2. **本地联调**：`make infra && make migrate && make run`，配置 `MEMEBOT_WATCHLIST` 观察真实信号链路（dry_run）。
-3. **补 Stage 6 剩余项**：V3 解析、Solana 签名、WebSocket 推送、回测框架、Grafana 面板。
+1. **本地联调**：`make infra && make migrate && make run`，配置 `MEMEBOT_WATCHLIST=base:<池子地址>` 观察 dry_run 下的完整链路（安全过滤 → 流动性 → 大额买入 → 跟风确认 → 风控 → 模拟下单 → 告警）。
+2. **补 Stage 6 剩余项**：Base V3 金额解析、Solana 交易签名、WebSocket 实时推送、回测框架、Grafana 面板。
+3. **接入真实收款**：注册支付回调路由（`/api/v1/payments/webhook`，需验签），对接链上 USDC 或 Stripe。
 4. **上线前**：按 `docs/RUNBOOK.md` 第 6 节清单逐项确认，再切 `live` 并用最小仓位灰度。

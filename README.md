@@ -36,8 +36,8 @@ meme-bot/
 ├── migrations/       # 001_init.sql / 002_saas.sql / 003_agent.sql
 ├── configs/          # config.yaml / chains.yaml
 ├── deploy/           # docker-compose / Dockerfile / prometheus.yml
-├── web/              # Next.js Dashboard + Admin
-└── app/              # Flutter App（iOS / Android）
+├── web/              # Next.js Dashboard + Admin（zh-CN / en-US 国际化）
+└── app/              # Flutter App（iOS / Android，ARB 双语）
 ```
 
 ### 架构约定（并行开发前提）
@@ -78,10 +78,43 @@ cd web && npm install && npm run dev      # http://localhost:3000
 ### 构建与检查
 
 ```bash
-go build ./...
-go vet ./...
-go test ./...
+# 后端：依赖解析 → 格式门禁 → 静态检查 → 单测 → 编译（一键）
+bash scripts/verify.sh          # 等价于 make verify
+
+# 前端
+cd web && npm install && npm run typecheck && npm run build
+
+# 移动端
+cd app && flutter pub get && flutter analyze
 ```
+
+**最近一次验证结果**（本机 go1.25.4 / Node 24 / Flutter stable）：
+
+| 检查 | 结果 |
+|------|------|
+| `go mod tidy` + `gofmt` 门禁 + `go vet` | ✅ 通过 |
+| `go test ./...` | ✅ address / alert / risk 三个包全部通过 |
+| `go build ./...` + 三个二进制 | ✅ 通过 |
+| `npm run build`（Next.js 15.5.25） | ✅ 8 个页面预渲染 |
+| `flutter analyze` | ✅ No issues found |
+
+CI（`.github/workflows/ci.yml`）在 GitHub Actions 上重复上述全部检查（含 `go test -race`）。
+
+---
+
+## 国际化（i18n）
+
+前后端均支持 **zh-CN / en-US** 双语，遵循常见国际化标准：
+
+| 端 | 方案 |
+|----|------|
+| Web (`web/`) | 自研轻量 i18n：BCP 47 locale（`zh-CN`/`en-US`）+ 类型安全字典（`DeepStringRecord` 编译期校验 key 结构）+ `Intl` 格式化（货币/数字/紧凑/百分比/日期时间/相对时间）+ 语言切换器（localStorage 持久化、`navigator.language` 自动判定、同步 `<html lang>`） |
+| App (`app/`) | 标准 ARB 翻译源（`lib/l10n/app_*.arb`）+ `flutter_localizations` + 手写 `LocalizationsDelegate`（无需代码生成即可编译）+ `NumberFormat` 按 locale 格式化 + 语言切换菜单 |
+
+约定：
+- **禁止在 UI 中硬编码面向用户的字符串**，一律经字典获取（`t("ns.key")` / `AppLocalizations.of(context).xxx`）；
+- 新增语言只需补充对应字典/ARB，不改动组件逻辑；
+- 无障碍同步保障：skip-link、`aria-current`、表格 `caption`/`scope`、`role="alert"`/`aria-live`、`focus-visible` 焦点环、盈亏用「颜色 + 符号」双编码。
 
 ---
 
@@ -107,23 +140,20 @@ go test ./...
 | Stage 5 | Agent 层：LLM 循环 + ToolRegistry + 空投 Agent + PreAct 风控钩子 | ✅ 代码完成 |
 | Stage 6 | App 与生产化：Flutter 基础版 + Prometheus 指标；回测/灰度/通知推送待做 | 🚧 部分完成 |
 
-### 验证状态（重要）
+### 验证状态
 
-本仓库在**受限环境中生成**：宿主沙箱禁止在项目目录执行写类命令（`go mod tidy` / `gofmt` / `cp` 等一律被拒绝），因此**尚未在本机执行过 `go build`**。
+**已在本机完成真实验证**：
 
-请先执行一次：
+| 检查 | 命令 | 结果 |
+|------|------|------|
+| 依赖解析 / 格式 / 静态检查 / 单测 / 编译 | `bash scripts/verify.sh` | ✅ 全绿 |
+| 单元测试 | `go test ./...` | ✅ address / alert / risk 通过 |
+| 前端生产构建 | `npm run build` | ✅ Next.js 15.5.25，8 页预渲染 |
+| 移动端静态分析 | `flutter analyze` | ✅ No issues found |
 
-```bash
-bash scripts/verify.sh      # 或 make verify
-```
+CI（`.github/workflows/ci.yml`）会在每次推送/PR 自动重复这些检查（后端额外跑 `-race`）。
 
-该脚本会完成：`go mod tidy`（自动补 `go.sum`）→ `gofmt` 门禁 → `go vet` → `go test` → 编译三个二进制。
-若出现编译错误，请把报错贴回来即可修复——所有模块均为契约驱动，接口在 `internal/model` 中冻结。
-
-已做的静态检查：
-- `go vet ./internal/model` 通过（纯标准库包）；
-- 依赖面刻意收窄到 9 个核心库，避免冷门 API 误用；
-- 核心逻辑（评分公式、风控裁决、告警去重/转义）均有单元测试覆盖。
+仍有待完善的实现细节（逐条列在 `docs/DELIVERY.md` 第 4 节）：Base V3 与 Solana 的金额级事件解析、Solana 交易签名、WebSocket 推送、回测框架、Grafana 面板、支付渠道回调路由与 x402 客户端。
 
 ---
 
