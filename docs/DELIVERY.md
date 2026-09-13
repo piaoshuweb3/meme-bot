@@ -98,13 +98,13 @@ CI（`.github/workflows/ci.yml`）在每次推送/PR 重复上述检查（后端
 
 | 项 | 状态 | 说明 |
 |----|------|------|
-| Base V3 池子 Swap 事件金额解析 | 部分 | V2 已完整解析（方向/金额/sender）；V3 目前只产出 txHash，需补 sqrtPriceX96 数学 |
+| Base V3 池子 Swap 事件解析 | ✅ 已完成 | `internal/chain/base/v3.go`：32 字节二补码有符号金额、方向判定（正=流入池子）、pool token0/1 映射、USD 补齐；3 个单测 |
 | Solana Swap 金额级解析 | 部分 | 当前基于 `getSignaturesForAddress` 轮询，需 Geyser/Jupiter 解析补全 |
-| Solana 交易签名 | 未实现 | Jupiter 返回的未签名交易需外部钱包签名（Ed25519 + 交易反序列化替换签名） |
+| Solana 交易签名 | ✅ 已完成 | `internal/chain/signer/solana.go`：wire-format 解析 + Ed25519 签名 + **fee payer 防盲签校验**；6 个单测（含拒绝他人 fee payer） |
 | 地址画像真实成本基准 | 简化 | `computeStats` 用已实现盈亏近似，未接入真实建仓成本配对 |
 | 成交活跃度倍数 | 近似 | 用 `volume24h / liquidity` 近似，真实实现需要时序库滚动均值 |
-| WebSocket 实时推送 | 未实现 | 当前前端为轮询（10–20s）；Stage 6 接 WS |
-| Flutter 推送/生物识别/安全存储 | 未实现 | 已在 `app/README.md` 标注 |
+| WebSocket 实时推送 | ✅ 已完成 | `internal/ws` Hub + `cmd/bot/ws_pump.go` 事件泵（信号 2s / 持仓 5s 快照 diff、告警扇出）+ 前端 `useRealtime`（轮询保留为降级）；5 个单测 + node 客户端实测 |
+| Flutter 推送/生物识别/安全存储 | 未实现 | 已在 `app/README.md` 标注（Web 端实时能力已具备，App 端可复用同一 `/ws` 端点） |
 | 回测引擎 / Grafana 面板 | 未实现 | Stage 6 |
 | x402 微支付客户端 | 未实现 | 数据库表（`x402_payments`）与迁移已就绪 |
 | 支付渠道对接 | ✅ 已打通（待接真实渠道） | `POST /api/v1/payments/webhook` 已注册：HMAC-SHA256 验签 + 时间戳防重放 + 幂等激活 + 返佣；实测首次回调 `commissioned=true`、重放 `deduped=true` |
@@ -131,7 +131,7 @@ CI（`.github/workflows/ci.yml`）在每次推送/PR 重复上述检查（后端
 
 ## 6. 建议的下一步
 
-1. **本地联调**：`make infra && make migrate && make run`，配置 `MEMEBOT_WATCHLIST=base:<池子地址>` 观察 dry_run 下的完整链路（安全过滤 → 流动性 → 大额买入 → 跟风确认 → 风控 → 模拟下单 → 告警）。
-2. **补 Stage 6 剩余项**：Base V3 金额解析、Solana 交易签名、WebSocket 实时推送、回测框架、Grafana 面板。
+1. **本地联调**：`make infra && make migrate && make run`，配置 `MEMEBOT_WATCHLIST=base:<池子地址>` 观察 dry_run 下的完整链路（安全过滤 → 流动性 → 大额买入 → 跟风确认 → 风控 → 模拟下单 → 告警 → 前端实时推送）。
+2. **补 Stage 6 剩余项**：回测框架、Grafana 面板、x402 客户端、Flutter 推送/生物识别（Solana 签名、V3 解析、WebSocket 均已完成）。
 3. **接入真实收款**：注册支付回调路由（`/api/v1/payments/webhook`，需验签），对接链上 USDC 或 Stripe。
 4. **上线前**：按 `docs/RUNBOOK.md` 第 6 节清单逐项确认，再切 `live` 并用最小仓位灰度。
