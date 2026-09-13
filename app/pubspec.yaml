@@ -14,6 +14,8 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   http: ^1.2.2
+  # 令牌只存平台安全区（Android Keystore / iOS Keychain）
+  flutter_secure_storage: ^9.2.2
   # intl 版本交由 flutter_localizations 约束，避免版本冲突
   intl: any
 

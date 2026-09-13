@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/api_client.dart';
+import '../../core/realtime_hub.dart';
 import '../../l10n/app_localizations.dart';
 
 /// 持仓页面（文案本地化 + locale 感知的价格与盈亏格式化）。
 class PositionsPage extends StatefulWidget {
-  const PositionsPage({super.key, required this.api});
+  const PositionsPage({super.key, required this.api, required this.hub});
 
   final ApiClient api;
+  final RealtimeHub hub;
 
   @override
   State<PositionsPage> createState() => _PositionsPageState();
@@ -22,6 +24,29 @@ class _PositionsPageState extends State<PositionsPage> {
   void initState() {
     super.initState();
     _load();
+    widget.hub.lastPosition.addListener(_onRealtimePosition);
+  }
+
+  @override
+  void dispose() {
+    widget.hub.lastPosition.removeListener(_onRealtimePosition);
+    super.dispose();
+  }
+
+  /// 实时更新对应持仓的标记价（无需整表重拉）。
+  void _onRealtimePosition() {
+    final incoming = widget.hub.lastPosition.value;
+    if (incoming == null || !mounted) return;
+    final id = incoming['id']?.toString();
+    if (id == null) return;
+    setState(() {
+      for (var i = 0; i < _positions.length; i++) {
+        if (_positions[i]['id']?.toString() == id) {
+          _positions[i] = {..._positions[i], ...incoming};
+          break;
+        }
+      }
+    });
   }
 
   Future<void> _load() async {

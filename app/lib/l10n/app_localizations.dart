@@ -85,6 +85,10 @@ class AppLocalizations {
   String healthUnavailable(String base, String error) =>
       _t('healthUnavailable', {'base': base, 'error': error});
 
+  // ---- 实时通道 ----
+  String get realtimeLive => _t('realtimeLive');
+  String get realtimePolling => _t('realtimePolling');
+
   // ---- 风控 ----
   String get riskTitle => _t('riskTitle');
   String get riskDescription => _t('riskDescription');
@@ -184,6 +188,8 @@ class AppLocalizations {
     'signalsStatusExecuted': '已执行',
     'signalsStatusExpired': '已过期',
     'signalsStatusRejected': '已拒绝',
+    'realtimeLive': '实时',
+    'realtimePolling': '轮询（降级）',
     'signalsLoadFailed': '加载失败：{error}',
     'positionsTitle': '持仓',
     'positionsEmpty': '当前无持仓',
@@ -244,6 +250,8 @@ class AppLocalizations {
     'signalsStatusExecuted': 'Executed',
     'signalsStatusExpired': 'Expired',
     'signalsStatusRejected': 'Rejected',
+    'realtimeLive': 'Live',
+    'realtimePolling': 'Polling (fallback)',
     'signalsLoadFailed': 'Failed to load: {error}',
     'positionsTitle': 'Positions',
     'positionsEmpty': 'No open positions',

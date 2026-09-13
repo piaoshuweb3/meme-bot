@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/api_client.dart';
+import '../../core/realtime_hub.dart';
 import '../../l10n/app_localizations.dart';
 
 /// 信号流页面（文案本地化 + locale 感知的数字/百分比格式化）。
 class SignalsPage extends StatefulWidget {
-  const SignalsPage({super.key, required this.api});
+  const SignalsPage({super.key, required this.api, required this.hub});
 
   final ApiClient api;
+  final RealtimeHub hub;
 
   @override
   State<SignalsPage> createState() => _SignalsPageState();
@@ -22,6 +24,32 @@ class _SignalsPageState extends State<SignalsPage> {
   void initState() {
     super.initState();
     _load();
+    // 实时推送：服务端检测到信号新增/状态变化即推送（断线时保留轮询）
+    widget.hub.lastSignal.addListener(_onRealtimeSignal);
+  }
+
+  @override
+  void dispose() {
+    widget.hub.lastSignal.removeListener(_onRealtimeSignal);
+    super.dispose();
+  }
+
+  /// 把实时信号合并进列表（同 id 更新状态，新 id 置顶）。
+  void _onRealtimeSignal() {
+    final incoming = widget.hub.lastSignal.value;
+    if (incoming == null || !mounted) return;
+    setState(() {
+      final idx = _signals.indexWhere(
+        (s) => s['id']?.toString() == incoming['id']?.toString(),
+      );
+      if (idx >= 0) {
+        final next = List<Map<String, dynamic>>.from(_signals);
+        next[idx] = {...next[idx], ...incoming};
+        _signals = next;
+      } else {
+        _signals = [incoming, ..._signals].take(200).toList();
+      }
+    });
   }
 
   Future<void> _load() async {

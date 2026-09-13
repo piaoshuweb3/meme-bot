@@ -2,23 +2,43 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'core/api_client.dart';
+import 'core/realtime_client.dart';
+import 'core/realtime_hub.dart';
+import 'core/secure_store.dart';
 import 'features/dashboard/dashboard_page.dart';
 import 'features/positions/positions_page.dart';
 import 'features/signals/signals_page.dart';
 import 'l10n/app_localizations.dart';
 
-void main() {
-  runApp(const MemeBotApp());
+/// 默认后端地址（Android 模拟器用 10.0.2.2 访问宿主机）。
+const defaultApiBase = String.fromEnvironment('API_BASE', defaultValue: 'http://10.0.2.2:8080');
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // 从安全存储恢复会话与偏好：令牌只存平台安全区（不可用时降级为内存）
+  final store = SecureStore();
+  final baseUrl = await store.readBaseUrl() ?? defaultApiBase;
+  final token = await store.readToken();
+  final localeTag = await store.readLocale();
+
+  runApp(MemeBotApp(store: store, baseUrl: baseUrl, token: token, initialLocaleTag: localeTag));
 }
 
-/// 应用根组件：负责 locale 状态与本地化代理装配。
-///
-/// 国际化要点：
-///   - locale 使用 BCP 47（zh-CN / en-US），由 [AppLocalizations.supportedLocales] 声明；
-///   - 未显式选择语言时跟随系统 locale（[platformDispatcher.locale]）；
-///   - 所有面向用户的文案都来自 [AppLocalizations]，页面内零硬编码。
+/// 应用根组件：本地化 + REST 客户端 + 实时连接 + 安全存储。
 class MemeBotApp extends StatefulWidget {
-  const MemeBotApp({super.key});
+  const MemeBotApp({
+    super.key,
+    required this.store,
+    required this.baseUrl,
+    this.token,
+    this.initialLocaleTag,
+  });
+
+  final SecureStore store;
+  final String baseUrl;
+  final String? token;
+  final String? initialLocaleTag;
 
   @override
   State<MemeBotApp> createState() => _MemeBotAppState();
@@ -26,6 +46,16 @@ class MemeBotApp extends StatefulWidget {
 
 class _MemeBotAppState extends State<MemeBotApp> {
   Locale? _locale;
+
+  @override
+  void initState() {
+    super.initState();
+    final tag = widget.initialLocaleTag;
+    if (tag != null && tag.isNotEmpty) {
+      final parts = tag.split('-');
+      _locale = parts.length > 1 ? Locale(parts[0], parts[1]) : Locale(parts[0]);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -46,22 +76,31 @@ class _MemeBotAppState extends State<MemeBotApp> {
         colorScheme: const ColorScheme.dark(primary: Color(0xFF4F8CFF)),
       ),
       home: HomeShell(
-        locale: _locale,
-        onLocaleChanged: (next) => setState(() => _locale = next),
+        store: widget.store,
+        baseUrl: widget.baseUrl,
+        token: widget.token,
+        onLocaleChanged: (next) async {
+          setState(() => _locale = next);
+          await widget.store.writeLocale(next == null ? '' : next.toLanguageTag());
+        },
       ),
     );
   }
 }
 
-/// 底部导航容器（总览 / 信号 / 持仓）。
+/// 底部导航容器（总览 / 信号 / 持仓），持有全局实时连接。
 class HomeShell extends StatefulWidget {
   const HomeShell({
     super.key,
-    required this.locale,
+    required this.store,
+    required this.baseUrl,
+    required this.token,
     required this.onLocaleChanged,
   });
 
-  final Locale? locale;
+  final SecureStore store;
+  final String baseUrl;
+  final String? token;
   final ValueChanged<Locale?> onLocaleChanged;
 
   @override
@@ -70,22 +109,36 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
-  late final ApiClient _api = ApiClient();
+  late final ApiClient _api = ApiClient(baseUrl: widget.baseUrl)..token = widget.token;
+  late final RealtimeHub _hub = RealtimeHub(baseUrl: widget.baseUrl);
+
+  @override
+  void initState() {
+    super.initState();
+    _hub.start();
+  }
+
+  @override
+  void dispose() {
+    _hub.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final pages = <Widget>[
-      DashboardPage(api: _api),
-      SignalsPage(api: _api),
-      PositionsPage(api: _api),
+      DashboardPage(api: _api, hub: _hub),
+      SignalsPage(api: _api, hub: _hub),
+      PositionsPage(api: _api, hub: _hub),
     ];
 
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.appTitle),
         actions: [
-          _languageMenu(context),
+          _realtimeBadge(l10n),
+          _languageMenu(l10n),
           IconButton(
             tooltip: l10n.settingsBaseUrlTitle,
             icon: const Icon(Icons.settings),
@@ -98,43 +151,44 @@ class _HomeShellState extends State<HomeShell> {
         selectedIndex: _index,
         onDestinationSelected: (i) => setState(() => _index = i),
         destinations: [
-          NavigationDestination(
-            icon: const Icon(Icons.dashboard_outlined),
-            label: l10n.navOverview,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.bolt_outlined),
-            label: l10n.navSignals,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.account_balance_wallet_outlined),
-            label: l10n.navPositions,
-          ),
+          NavigationDestination(icon: const Icon(Icons.dashboard_outlined), label: l10n.navOverview),
+          NavigationDestination(icon: const Icon(Icons.bolt_outlined), label: l10n.navSignals),
+          NavigationDestination(icon: const Icon(Icons.account_balance_wallet_outlined), label: l10n.navPositions),
         ],
       ),
     );
   }
 
-  /// 语言切换菜单：跟随系统 / 简体中文 / English。
-  Widget _languageMenu(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
+  /// 实时通道状态徽章（绿=实时 / 灰=降级轮询）。
+  Widget _realtimeBadge(AppLocalizations l10n) {
+    return ValueListenableBuilder<RealtimeStatus>(
+      valueListenable: _hub.status,
+      builder: (context, status, _) {
+        final live = status == RealtimeStatus.open;
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Chip(
+            visualDensity: VisualDensity.compact,
+            backgroundColor: live ? const Color(0x333DDC97) : const Color(0x33FFFFFF),
+            label: Text(
+              live ? l10n.realtimeLive : l10n.realtimePolling,
+              style: const TextStyle(fontSize: 11),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _languageMenu(AppLocalizations l10n) {
     return PopupMenuButton<Locale?>(
       tooltip: l10n.commonLanguage,
       icon: const Icon(Icons.translate),
       onSelected: widget.onLocaleChanged,
-      itemBuilder: (ctx) => [
-        PopupMenuItem<Locale?>(
-          value: null,
-          child: Text('${l10n.commonLanguage} · ${l10n.navOverview == '总览' ? '系统' : 'System'}'),
-        ),
-        const PopupMenuItem<Locale?>(
-          value: Locale('zh', 'CN'),
-          child: Text('简体中文'),
-        ),
-        const PopupMenuItem<Locale?>(
-          value: Locale('en', 'US'),
-          child: Text('English'),
-        ),
+      itemBuilder: (ctx) => const [
+        PopupMenuItem<Locale?>(value: null, child: Text('跟随系统 / System')),
+        PopupMenuItem<Locale?>(value: Locale('zh', 'CN'), child: Text('简体中文')),
+        PopupMenuItem<Locale?>(value: Locale('en', 'US'), child: Text('English')),
       ],
     );
   }
@@ -156,18 +210,13 @@ class _HomeShellState extends State<HomeShell> {
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(l10n.settingsCancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: Text(l10n.settingsSave),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l10n.settingsCancel)),
+          FilledButton(onPressed: () => Navigator.pop(ctx, controller.text.trim()), child: Text(l10n.settingsSave)),
         ],
       ),
     );
     if (value != null && value.isNotEmpty) {
+      await widget.store.writeBaseUrl(value);
       setState(() => _api.baseUrl = value);
     }
   }

@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/api_client.dart';
+import '../../core/realtime_hub.dart';
 import '../../l10n/app_localizations.dart';
 
 /// 总览页：后端状态、熔断控制、关键指标（文案全部本地化）。
 class DashboardPage extends StatefulWidget {
-  const DashboardPage({super.key, required this.api});
+  const DashboardPage({super.key, required this.api, required this.hub});
 
   final ApiClient api;
+  final RealtimeHub hub;
 
   @override
   State<DashboardPage> createState() => _DashboardPageState();
@@ -23,6 +25,31 @@ class _DashboardPageState extends State<DashboardPage> {
   void initState() {
     super.initState();
     _load();
+    // 信号/告警实时到达时刷新概览；告警同时以 SnackBar 提示
+    widget.hub.lastSignal.addListener(_onRealtimeSignal);
+    widget.hub.lastAlert.addListener(_onRealtimeAlert);
+  }
+
+  @override
+  void dispose() {
+    widget.hub.lastSignal.removeListener(_onRealtimeSignal);
+    widget.hub.lastAlert.removeListener(_onRealtimeAlert);
+    super.dispose();
+  }
+
+  void _onRealtimeSignal() {
+    if (mounted) _load();
+  }
+
+  void _onRealtimeAlert() {
+    final alert = widget.hub.lastAlert.value;
+    if (alert == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(alert['title']?.toString() ?? 'alert'),
+        duration: const Duration(seconds: 4),
+      ),
+    );
   }
 
   Future<void> _load() async {
