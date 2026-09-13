@@ -260,6 +260,10 @@ func main() {
 		log.Warn("未配置 MEMEBOT_WATCHLIST（格式 chain:token,chain:token），监控循环未启动")
 	}
 	// 链上 USDC 收款：付款 → 订阅激活 → 直推返佣（幂等，走同一 HandlePaymentSucceeded）
+	if len(cfg.EnvRPCChains) > 0 {
+		log.Info("链 RPC 端点由环境变量覆盖", zap.Strings("chains", cfg.EnvRPCChains))
+	}
+
 	startUSDCPaymentWatcher(ctx, cfg, pool, subSvc, log)
 
 	unsubs := startWatchers(ctx, factory, engine, executor, riskEngine, dryRun, watch, reg, log)

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -37,6 +38,9 @@ const (
 
 // Config 是应用配置的根对象。
 type Config struct {
+	// EnvRPCChains 记录 RPC 端点由环境变量覆盖（或据其新建）的链，仅供启动日志与排障使用。
+	EnvRPCChains []string `mapstructure:"-"`
+
 	Mode        Mode             `mapstructure:"mode"`
 	Server      ServerConfig     `mapstructure:"server"`
 	Database    DatabaseConfig   `mapstructure:"database"`
@@ -459,24 +463,188 @@ func bindEnv(v *viper.Viper) {
 	}
 }
 
-// applyEnvOverrides 处理链级别的环境变量覆盖（RPC 列表、私钥占位）。
+// nativeTokenSentinel 是 EVM 原生代币的惯例占位地址（EIP-7528）。
+const nativeTokenSentinel = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
+
+// applyEnvOverrides 处理 viper 无法自动映射的配置：链级参数位于 map 键下，
+// 而 viper 的 AutomaticEnv 不会深入 map，必须显式注入。
+//
+// 链名 → 环境变量段名：大写，非字母数字替换为下划线。
+// 因此 base-sepolia 对应 MEMEBOT_CHAINS_BASE_SEPOLIA_*（连字符不能出现在环境变量名中）。
+//
+// 支持的键（<SEG> 为段名，如 BASE_SEPOLIA）：
+//
+//	MEMEBOT_CHAINS_<SEG>_RPC_URLS              RPC 端点列表（逗号/分号/空白分隔）
+//	MEMEBOT_CHAINS_<SEG>_PRIVATE_TX_RPC        私有交易通道 RPC
+//	MEMEBOT_CHAINS_<SEG>_AGGREGATOR_BASE_URL   聚合器 API 地址
+//	MEMEBOT_CHAINS_<SEG>_AGGREGATOR_API_KEY    聚合器密钥：只把「变量名」写入配置，
+//	                                           密钥值始终留在环境中，绝不进入配置结构（不落盘、不打印）
+//	MEMEBOT_CHAINS_<SEG>_MIN_LIQUIDITY_USD     最小流动性门槛
+//	MEMEBOT_CHAINS_<SEG>_CONFIRMATIONS         所需确认数
+//	MEMEBOT_CHAINS_<SEG>_EVM_CHAIN_ID          EVM chain id
+//	MEMEBOT_CHAINS_<SEG>_SUPPORTED             是否参与交易监控
+//	MEMEBOT_CHAINS_<SEG>_PARSE_TRANSACTIONS    是否做金额级解析
+//	MEMEBOT_CHAINS_<SEG>_CHAIN_ID              规范链名：仅当该链未在 chains.yaml 中定义时用于自动建条目
 func applyEnvOverrides(cfg *Config) {
+	cfg.EnvRPCChains = nil
+	overridden := make(map[string]struct{})
+
 	for id, ch := range cfg.Chains {
-		upper := strings.ToUpper(id)
-		if v := ResolveSecret(EnvPrefix + "_CHAINS_" + upper + "_RPC_URLS"); v != "" {
-			ch.RPCURLs = splitCSV(v)
+		seg := envChainSegment(id)
+
+		if v := ResolveSecret(envChainKey(seg, "RPC_URLS")); v != "" {
+			ch.RPCURLs = splitList(v)
+			overridden[id] = struct{}{}
 		}
-		if v := ResolveSecret(EnvPrefix + "_PRIVATE_TX_" + upper + "_RPC"); v != "" {
+		if v := ResolveSecret(envChainKey(seg, "PRIVATE_TX_RPC")); v != "" {
 			ch.PrivateTxRPC = v
 		}
+		if v := ResolveSecret(envChainKey(seg, "AGGREGATOR_BASE_URL")); v != "" {
+			ch.AggregatorBaseURL = v
+		}
+		if ResolveSecret(envChainKey(seg, "AGGREGATOR_API_KEY")) != "" {
+			ch.AggregatorAPIKeyEnv = envChainKey(seg, "AGGREGATOR_API_KEY")
+		}
+		if v := ResolveSecret(envChainKey(seg, "MIN_LIQUIDITY_USD")); v != "" {
+			if f, err := strconv.ParseFloat(v, 64); err == nil {
+				ch.MinLiquidityUSD = f
+			}
+		}
+		if v := ResolveSecret(envChainKey(seg, "CONFIRMATIONS")); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				ch.Confirmations = n
+			}
+		}
+		if v := ResolveSecret(envChainKey(seg, "EVM_CHAIN_ID")); v != "" {
+			if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+				ch.EVMChainID = n
+			}
+		}
+		if v := ResolveSecret(envChainKey(seg, "SUPPORTED")); v != "" {
+			ch.Supported = parseBool(v, ch.Supported)
+		}
+		if v := ResolveSecret(envChainKey(seg, "PARSE_TRANSACTIONS")); v != "" {
+			ch.ParseTransactions = parseBool(v, ch.ParseTransactions)
+		}
+
 		cfg.Chains[id] = ch
 	}
+
+	// 新链：段名无法反推规范链名（BASE_SEPOLIA 可能是 base-sepolia 或 base_sepolia），
+	// 因此要求同时提供 CHAIN_ID 显式声明；新链默认 SUPPORTED=false，避免误参与交易监控。
+	for _, kv := range os.Environ() {
+		eq := strings.Index(kv, "=")
+		if eq <= 0 {
+			continue
+		}
+		name := kv[:eq]
+		value := strings.TrimSpace(kv[eq+1:])
+		prefix := EnvPrefix + "_CHAINS_"
+		if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, "_RPC_URLS") || value == "" {
+			continue
+		}
+		seg := strings.TrimSuffix(strings.TrimPrefix(name, prefix), "_RPC_URLS")
+		chainID := strings.ToLower(ResolveSecret(envChainKey(seg, "CHAIN_ID")))
+		if seg == "" || chainID == "" {
+			continue
+		}
+		if _, exists := cfg.Chains[chainID]; exists {
+			continue
+		}
+
+		var evmID int64
+		if v := ResolveSecret(envChainKey(seg, "EVM_CHAIN_ID")); v != "" {
+			if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+				evmID = n
+			}
+		}
+		cfg.Chains[chainID] = Chain{
+			ChainID:       chainID,
+			EVMChainID:    evmID,
+			NativeToken:   TokenConfig{Address: nativeTokenSentinel, Symbol: "ETH", Decimals: 18},
+			RPCURLs:       splitList(value),
+			Aggregator:    "1inch",
+			Confirmations: 12,
+			Supported:     false,
+		}
+		overridden[chainID] = struct{}{}
+	}
+
+	for id := range overridden {
+		cfg.EnvRPCChains = append(cfg.EnvRPCChains, id)
+	}
+	sortStrings(cfg.EnvRPCChains)
+
 	if v := ResolveSecret(EnvPrefix + "_PRIVATE_TX_BASE_RPC"); v != "" {
 		cfg.PrivateTx.BaseRPC = v
 	}
 	if v := ResolveSecret(EnvPrefix + "_PRIVATE_TX_SOLANA_RPC"); v != "" {
 		cfg.PrivateTx.SolanaRPC = v
 	}
+}
+
+// envChainKey 组装链级环境变量名。
+func envChainKey(segment, field string) string {
+	return EnvPrefix + "_CHAINS_" + segment + "_" + field
+}
+
+// envChainSegment 把链名转换为环境变量段名：大写，非字母数字替换为下划线。
+func envChainSegment(id string) string {
+	var b strings.Builder
+	for _, r := range strings.ToUpper(strings.TrimSpace(id)) {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteByte('_')
+	}
+	return b.String()
+}
+
+// splitList 拆分列表型配置（逗号/分号/空白分隔均可）。
+func splitList(s string) []string {
+	parts := strings.FieldsFunc(s, func(r rune) bool {
+		return r == ',' || r == ';' || r == ' ' || r == 9 || r == 10 || r == 13
+	})
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// parseBool 宽松解析布尔值；无法识别时保留原值。
+func parseBool(s string, fallback bool) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	}
+	return fallback
+}
+
+// MaskURL 打码 RPC URL：Alchemy/Infura 等把密钥放在 path 中，
+// 因此日志只允许输出 scheme 与 host。
+func MaskURL(raw string) string {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return ""
+	}
+	scheme := ""
+	if i := strings.Index(s, "://"); i >= 0 {
+		scheme, s = s[:i+3], s[i+3:]
+	}
+	host := s
+	if i := strings.IndexAny(s, "/?"); i >= 0 {
+		host = s[:i]
+	}
+	if host == "" {
+		return "***"
+	}
+	return scheme + host + "/***"
 }
 
 func splitCSV(s string) []string {

@@ -96,6 +96,31 @@ export MEMEBOT_WATCHLIST="base:0xPoolAddress,solana:MintAddress"
 
 ---
 
+### 4.4 替换链的 RPC 端点（密钥不入库）
+
+链参数可用环境变量覆盖，**不必改 `configs/chains.yaml`**：
+
+```bash
+# 命名规则：链名大写、连字符换下划线
+#   base-sepolia → MEMEBOT_CHAINS_BASE_SEPOLIA_RPC_URLS
+export MEMEBOT_CHAINS_BASE_SEPOLIA_RPC_URLS="https://base-sepolia.g.alchemy.com/v2/<KEY>"
+
+# 多端点：逗号/分号/空白分隔，运行时按顺序故障切换
+export MEMEBOT_CHAINS_BASE_RPC_URLS="https://my-node.example,https://mainnet.base.org"
+```
+
+可覆盖字段：`RPC_URLS`、`PRIVATE_TX_RPC`、`AGGREGATOR_BASE_URL`、`AGGREGATOR_API_KEY`、
+`MIN_LIQUIDITY_USD`、`CONFIRMATIONS`、`EVM_CHAIN_ID`、`SUPPORTED`、`PARSE_TRANSACTIONS`、
+`CHAIN_ID`（仅用于新建 yaml 中不存在的链，须同时给 `EVM_CHAIN_ID`，且默认 `SUPPORTED=false`）。
+
+注意事项：
+
+- 密钥只存在于环境变量中：`AGGREGATOR_API_KEY` 只把**变量名**写入配置结构，值不落盘；
+- 启动日志会打印 `链 RPC 端点由环境变量覆盖 {"chains": [...]}`，可据此确认是否生效；
+- 日志与错误信息中的 URL 一律打码（`config.MaskURL` 保留 scheme+host），不会泄漏 path 中的密钥；
+- 公共 RPC 常按出口 IP 限流（实测 `publicnode`/`sepolia.base.org` 返回 403），生产务必用自建节点或付费端点；
+- 逐端点排查连通性：`curl -s -X POST <RPC> -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}'`
+
 ## 5. 故障排查
 
 | 症状 | 排查顺序 |
