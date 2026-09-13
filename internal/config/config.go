@@ -211,6 +211,21 @@ type PaymentConfig struct {
 	WebhookSecret string `mapstructure:"webhook_secret"`
 	// ToleranceSeconds 时间戳容忍窗口（秒），用于防重放；<=0 表示不校验时间戳。
 	ToleranceSeconds int `mapstructure:"tolerance_seconds"`
+
+	// USDC 链上收款（真实收费闭环：付款 → 订阅激活 → 返佣）
+	USDC USDCConfig `mapstructure:"usdc"`
+}
+
+// USDCConfig 链上 USDC 收款配置。
+type USDCConfig struct {
+	Enabled          bool    `mapstructure:"enabled"`
+	Network          string  `mapstructure:"network"`            // base / polygon / arbitrum / ethereum
+	Asset            string  `mapstructure:"asset"`              // USDC 合约地址（留空则用内置表）
+	PayTo            string  `mapstructure:"pay_to"`             // 收款地址（只从环境变量注入，避免误提交）
+	Confirmations    uint64  `mapstructure:"confirmations"`      // 所需确认数
+	PollSeconds      int     `mapstructure:"poll_seconds"`       // 轮询间隔
+	OrderWindowHours int     `mapstructure:"order_window_hours"` // 只匹配该时间窗内的订单
+	AmountTolerance  float64 `mapstructure:"amount_tolerance"`   // 金额容差（USD，0 = 精确）
 }
 
 // Load 读取配置。paths[0] 为 config.yaml 路径（默认 configs/config.yaml）。
@@ -403,6 +418,12 @@ func setDefaults(v *viper.Viper) {
 
 	v.SetDefault("payment.provider", "generic")
 	v.SetDefault("payment.tolerance_seconds", 300)
+	v.SetDefault("payment.usdc.enabled", false)
+	v.SetDefault("payment.usdc.network", "base")
+	v.SetDefault("payment.usdc.confirmations", 12)
+	v.SetDefault("payment.usdc.poll_seconds", 30)
+	v.SetDefault("payment.usdc.order_window_hours", 48)
+	v.SetDefault("payment.usdc.amount_tolerance", 0)
 }
 
 // bindEnv 显式绑定需要环境变量覆盖的键。
@@ -427,6 +448,8 @@ func bindEnv(v *viper.Viper) {
 		"providers.moralis_api_key", "providers.bitquery_api_key",
 		"providers.dexscreener_enabled",
 		"payment.provider", "payment.webhook_secret", "payment.tolerance_seconds",
+		"payment.usdc.enabled", "payment.usdc.network", "payment.usdc.asset", "payment.usdc.pay_to",
+		"payment.usdc.confirmations", "payment.usdc.poll_seconds",
 	}
 	for _, k := range keys {
 		_ = v.BindEnv(k)

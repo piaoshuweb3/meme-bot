@@ -111,3 +111,16 @@ payment:
   webhook_secret: ""
   # 回调时间戳容忍窗口（秒），防重放；0 = 关闭校验
   tolerance_seconds: 300
+
+  # 链上 USDC 收款（真实收费闭环：付款 → 订阅激活 → 返佣）
+  usdc:
+    enabled: false
+    network: base
+    # 留空则使用内置的 USDC 合约表（base/polygon/arbitrum/ethereum）
+    asset: ""
+    # ⚠️ 收款地址只从环境变量读取：MEMEBOT_PAYMENT_USDC_PAY_TO
+    pay_to: ""
+    confirmations: 12
+    poll_seconds: 30
+    order_window_hours: 48
+    amount_tolerance: 0

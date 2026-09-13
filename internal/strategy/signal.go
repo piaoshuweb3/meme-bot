@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"meme-bot/internal/config"
+	"meme-bot/internal/market"
 	"meme-bot/internal/metrics"
 	"meme-bot/internal/model"
 )
@@ -34,7 +35,9 @@ type SignalEngine struct {
 	log    *zap.Logger
 
 	// now 可注入时钟：实盘为 time.Now；回测注入"当前事件时间"，使 TTL/冷却语义正确。
-	now func() time.Time
+	// rolling 成交额滚动窗口：用于"相对该代币自身均值"的突增判定（比比值近似更可比）。
+	rolling *market.RollingWindow
+	now     func() time.Time
 
 	mu         sync.Mutex
 	active     map[string]*model.Signal
@@ -77,6 +80,14 @@ func NewSignalEngine(
 		buyers:     make(map[string]map[string]time.Time),
 		lastSignal: make(map[string]time.Time),
 	}
+}
+
+// WithRolling 注入成交额滚动窗口（可选；未注入时回退为"成交额/流动性"比值近似）。
+func (e *SignalEngine) WithRolling(w *market.RollingWindow) *SignalEngine {
+	if w != nil {
+		e.rolling = w
+	}
+	return e
 }
 
 // WithClock 注入时钟（回测场景：用事件时间驱动 TTL / 冷却 / 衰减）。
@@ -155,7 +166,7 @@ func (e *SignalEngine) Evaluate(ev model.SwapEvent) (*model.Signal, error) {
 		AmountUSD:      ev.AmountUSD,
 		PriceUSD:       ev.PriceUSD,
 		LiquidityUSD:   liquidity.LiquidityUSD,
-		VolumeSpike:    e.volumeMultiple(liquidity),
+		VolumeSpike:    e.volumeMultipleFor(liquidity, ev.Chain, token, now),
 		Security:       *security,
 		Decay:          1.0,
 		Status:         model.SignalPending,
@@ -324,6 +335,23 @@ func (e *SignalEngine) drop(id string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	delete(e.active, id)
+}
+
+// volumeMultipleFor 计算成交额突增倍数：优先滚动窗口（相对该代币自身近期均值），
+// 样本不足时先记录观测并返回 0（表示"暂不判定"）；未注入窗口时回退为比值近似。
+func (e *SignalEngine) volumeMultipleFor(liq *model.LiquidityInfo, chain, token string, at time.Time) float64 {
+	if liq == nil || liq.Volume24hUSD <= 0 {
+		return 0
+	}
+	if e.rolling != nil {
+		key := chain + "|" + token
+		if mult := e.rolling.Multiple(key, liq.Volume24hUSD, 3); mult > 0 {
+			return mult
+		}
+		e.rolling.Observe(key, liq.Volume24hUSD, at)
+		return 0
+	}
+	return e.volumeMultiple(liq)
 }
 
 // volumeMultiple 用 24h 成交量与流动性的比值近似“成交活跃度倍数”。

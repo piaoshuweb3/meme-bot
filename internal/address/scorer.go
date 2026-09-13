@@ -310,6 +310,40 @@ func computeStats(trades []*model.TradeRecord) stats {
 		}
 		st.avgHoldSeconds = sum / int64(len(holdSamples))
 	}
+	// 盈亏类指标改用**加权平均成本法**配对（真实建仓成本），而非流水里的估算 pnl：
+	// 这样 WinRate / ProfitFactor / MaxDrawdown / Consistency 才是可复核的口径。
+	basis := ComputeCostBasis(trades)
+	if basis.ClosedTrades > 0 {
+		st.winRate = float64(basis.Wins) / float64(basis.ClosedTrades)
+		st.wins = basis.Wins
+		st.consistency = consistencyOf(basis.TradePnLs)
+
+		var grossWin, grossLoss float64
+		equity, peak, maxDD := 0.0, 0.0, 0.0
+		for _, pnl := range basis.TradePnLs {
+			if pnl > 0 {
+				grossWin += pnl
+			} else {
+				grossLoss += -pnl
+			}
+			equity += pnl
+			if equity > peak {
+				peak = equity
+			}
+			if peak > 0 {
+				if dd := (peak - equity) / peak; dd > maxDD {
+					maxDD = dd
+				}
+			}
+		}
+		switch {
+		case grossLoss > 0:
+			st.profitFactor = grossWin / grossLoss
+		case grossWin > 0:
+			st.profitFactor = 10 // 无亏损样本时给上限，避免除零
+		}
+		st.maxDrawdown = clamp01(maxDD)
+	}
 	return st
 }
 

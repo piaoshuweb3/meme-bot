@@ -101,15 +101,15 @@ CI（`.github/workflows/ci.yml`）在每次推送/PR 重复上述检查（后端
 | Base V3 池子 Swap 事件解析 | ✅ 已完成 | `internal/chain/base/v3.go`：32 字节二补码有符号金额、方向判定（正=流入池子）、pool token0/1 映射、USD 补齐；3 个单测 |
 | Solana Swap 金额级解析 | 部分 | 当前基于 `getSignaturesForAddress` 轮询，需 Geyser/Jupiter 解析补全 |
 | Solana 交易签名 | ✅ 已完成 | `internal/chain/signer/solana.go`：wire-format 解析 + Ed25519 签名 + **fee payer 防盲签校验**；6 个单测（含拒绝他人 fee payer） |
-| 地址画像真实成本基准 | 简化 | `computeStats` 用已实现盈亏近似，未接入真实建仓成本配对 |
-| 成交活跃度倍数 | 近似 | 用 `volume24h / liquidity` 近似，真实实现需要时序库滚动均值 |
+| 地址画像成本基准 | ✅ 已完成 | `internal/address/costbasis.go`：**加权平均成本法**从流水重放真实已实现盈亏（数量由金额/价格推算）；画像的 WinRate/ProfitFactor/MaxDrawdown/Consistency 全部改用该口径；4 个单测（含部分平仓、超卖截断、缺价格跳过） |
+| 成交活跃度倍数 | ✅ 已完成 | `internal/market/rolling.go`：**滚动窗口**按代币维护成交额样本，倍数 = 当前值 / 自身近期均值（跨代币可比）；样本不足时返回 0（暂不判定）而非误报；已接入信号引擎（`WithRolling`），未注入时回退旧近似；3 个单测 |
 | WebSocket 实时推送 | ✅ 已完成 | `internal/ws` Hub + `cmd/bot/ws_pump.go` 事件泵（信号 2s / 持仓 5s 快照 diff、告警扇出）+ 前端 `useRealtime`（轮询保留为降级）；5 个单测 + node 客户端实测 |
 | Flutter 实时推送 + 安全存储 | ✅ 已完成 | `RealtimeHub`（全局单连接 + 指数退避重连）+ `SecureStore`（令牌存 Android Keystore / iOS Keychain，不可用降级内存，绝不落盘）；语言与后端地址持久化；三页接入实时事件 |
 | Flutter 生物识别二次确认 | ✅ 已完成 | `local_auth` + `BiometricGuard`（设备不支持时降级为显式确认对话框，绝不静默放行）；已接入熔断/恢复操作 |
 | 回测引擎 | ✅ 已完成 | `internal/backtest`（复用实盘策略与风控、事件时间驱动时钟、滑点/手续费/权益曲线/最大回撤）+ `cmd/backtest` CLI（`-emit-sample` / `-events` / `-out`）；6 个单测；已实测跑通 |
 | Grafana 面板 | ✅ 已完成 | `deploy/grafana/`（数据源 + 看板 provisioning）与 8 面板看板 JSON（熔断/持仓/权益/WS + 信号漏斗/订单/告警/支付回调速率）；compose 新增 grafana 服务（默认 3001） |
 | x402 微支付客户端 | ✅ 已完成 | `internal/payment`：402 要求解析（accepts/单对象）、自动支付并重试、**EIP-3009（USDC）授权签名**、单次金额上限安全阀；6 个单测（含签名可恢复与端到端 402） |
-| 支付渠道对接 | ✅ 已打通（待接真实渠道） | `POST /api/v1/payments/webhook` 已注册：HMAC-SHA256 验签 + 时间戳防重放 + 幂等激活 + 返佣；实测首次回调 `commissioned=true`、重放 `deduped=true` |
+| 支付渠道对接（链上 USDC） | ✅ 已完成 | `internal/payment`：EVM `eth_getLogs` 监听 USDC 转入（按 to 过滤）+ 确认数等待 + 金额匹配（支持容差）+ 幂等激活（`usdc_payments.tx_hash` 唯一 + `HandlePaymentSucceeded`）；迁移 `004_usdc.sql`；6 个单测（精确/容差/争抢/确认不足/非收款地址/重复轮询）；另保留 HMAC webhook 供 Stripe 等渠道接入 |
 
 ### 4.3 环境残留
 

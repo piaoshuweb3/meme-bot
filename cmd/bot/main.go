@@ -38,6 +38,7 @@ import (
 	"meme-bot/internal/logger"
 	"meme-bot/internal/metrics"
 	"meme-bot/internal/model"
+	"meme-bot/internal/payment"
 	"meme-bot/internal/provider"
 	"meme-bot/internal/risk"
 	"meme-bot/internal/storage"
@@ -258,6 +259,9 @@ func main() {
 	if len(watch) == 0 {
 		log.Warn("未配置 MEMEBOT_WATCHLIST（格式 chain:token,chain:token），监控循环未启动")
 	}
+	// 链上 USDC 收款：付款 → 订阅激活 → 直推返佣（幂等，走同一 HandlePaymentSucceeded）
+	startUSDCPaymentWatcher(ctx, cfg, pool, subSvc, log)
+
 	unsubs := startWatchers(ctx, factory, engine, executor, riskEngine, dryRun, watch, reg, log)
 	defer func() {
 		for _, unsub := range unsubs {
@@ -596,6 +600,72 @@ func toBaseUnits(usd, priceUSD float64, adapter model.ChainAdapter, ctx context.
 
 	out, _ := value.Int(nil)
 	return out, nil
+}
+
+// startUSDCPaymentWatcher 在启用配置时启动 USDC 收款监听。
+//
+// 配置：payment.usdc.{enabled,network,pay_to,...}；收款地址只从环境变量
+// MEMEBOT_PAYMENT_USDC_PAY_TO 读取（避免误提交到仓库）。
+func startUSDCPaymentWatcher(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, subSvc *subscription.Service, log *zap.Logger) {
+	usdc := cfg.Payment.USDC
+	if !usdc.Enabled {
+		return
+	}
+	if pool == nil || subSvc == nil {
+		log.Warn("USDC 收款已启用但数据库不可用，监听未启动")
+		return
+	}
+	if usdc.PayTo == "" {
+		log.Warn("USDC 收款已启用但未配置 MEMEBOT_PAYMENT_USDC_PAY_TO，监听未启动")
+		return
+	}
+
+	asset := usdc.Asset
+	if asset == "" {
+		// 内置表按 "network|asset" 建键，取该网络下的第一个（USDC）
+		prefix := strings.ToLower(usdc.Network) + "|"
+		for k, info := range payment.DefaultAssets() {
+			if strings.HasPrefix(k, prefix) {
+				asset = info.Address
+				break
+			}
+		}
+	}
+	if asset == "" {
+		log.Error("USDC 收款：无法确定资产地址，监听未启动", zap.String("network", usdc.Network))
+		return
+	}
+
+	rpcURLs := []string{}
+	if ch, ok := cfg.Chain(usdc.Network); ok {
+		rpcURLs = ch.RPCURLs
+	}
+	if len(rpcURLs) == 0 {
+		log.Error("USDC 收款：网络未配置 RPC，监听未启动", zap.String("network", usdc.Network))
+		return
+	}
+
+	logs := payment.NewEVMTransferSource("usdc-"+usdc.Network, rpcURLs)
+	orderSource := subscription.NewUSDCOrderSource(subSvc, pool)
+	watcher := payment.NewWatcher(payment.WatcherConfig{
+		Asset:           asset,
+		PayTo:           usdc.PayTo,
+		Decimals:        6,
+		Confirmations:   usdc.Confirmations,
+		PollInterval:    time.Duration(usdc.PollSeconds) * time.Second,
+		OrderWindow:     time.Duration(usdc.OrderWindowHours) * time.Hour,
+		AmountTolerance: usdc.AmountTolerance,
+	}, logs, orderSource, log)
+
+	log.Info("USDC 收款监听已启动",
+		zap.String("network", usdc.Network),
+		zap.String("asset", asset),
+		zap.Uint64("confirmations", usdc.Confirmations))
+	go func() {
+		if err := watcher.Run(ctx); err != nil && ctx.Err() == nil {
+			log.Error("USDC 收款监听退出", zap.Error(err))
+		}
+	}()
 }
 
 // decayLoop 周期衰减信号：过期信号自动作废并通知。

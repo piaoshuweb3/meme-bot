@@ -106,10 +106,12 @@ func TestIsEligibleUsesThreshold(t *testing.T) {
 func TestComputeStatsFromTrades(t *testing.T) {
 	base := time.Now().UTC().Add(-10 * time.Hour)
 	trades := []*model.TradeRecord{
-		{Chain: "base", Address: "0x1", Token: "T", Side: model.SideBuy, AmountUSD: 100, At: base},
-		{Chain: "base", Address: "0x1", Token: "T", Side: model.SideSell, AmountUSD: 150, PnLUSD: 50, At: base.Add(time.Hour)},
-		{Chain: "base", Address: "0x1", Token: "U", Side: model.SideBuy, AmountUSD: 200, At: base.Add(2 * time.Hour)},
-		{Chain: "base", Address: "0x1", Token: "U", Side: model.SideSell, AmountUSD: 150, PnLUSD: -50, At: base.Add(3 * time.Hour)},
+		// T：100 买 @1.0 → 150 卖 @1.5（数量 100）＝ 盈利 +50
+		{Chain: "base", Address: "0x1", Token: "T", Side: model.SideBuy, AmountUSD: 100, PriceUSD: 1.0, At: base},
+		{Chain: "base", Address: "0x1", Token: "T", Side: model.SideSell, AmountUSD: 150, PriceUSD: 1.5, At: base.Add(time.Hour)},
+		// U：200 买 @2.0 → 150 卖 @1.5（数量 100）＝ 亏损 -50
+		{Chain: "base", Address: "0x1", Token: "U", Side: model.SideBuy, AmountUSD: 200, PriceUSD: 2.0, At: base.Add(2 * time.Hour)},
+		{Chain: "base", Address: "0x1", Token: "U", Side: model.SideSell, AmountUSD: 150, PriceUSD: 1.5, At: base.Add(3 * time.Hour)},
 	}
 
 	st := computeStats(trades)
