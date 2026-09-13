@@ -41,6 +41,8 @@ type Deps struct {
 	Chains    []string
 	// CORSOrigins 允许跨源的来源白名单（来自 server.cors_allowed_origins）
 	CORSOrigins []string
+	// WS 是已装配好的 WebSocket 处理器（GET /ws）；为 nil 时不注册实时推送端点
+	WS gin.HandlerFunc
 }
 
 // SetupRouter 装配路由。
@@ -94,6 +96,11 @@ func SetupRouter(d Deps) *gin.Engine {
 	// 支付渠道回调：不依赖 JWT，改用 HMAC-SHA256 验签 + 时间戳防重放
 	if d.Payments != nil {
 		r.POST("/api/v1/payments/webhook", d.Payments.Handle)
+	}
+
+	// 实时推送：握手时按 Origin 白名单校验（可选令牌鉴权由 handler 内部决定）
+	if d.WS != nil {
+		r.GET("/ws", d.WS)
 	}
 
 	// 用户端（JWT）

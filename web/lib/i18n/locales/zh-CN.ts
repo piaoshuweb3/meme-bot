@@ -161,6 +161,12 @@ export const zhCN = {
     apiKeyWarning: "API Key（仅显示一次）",
   },
 
+  realtime: {
+    live: "实时",
+    polling: "轮询（降级）",
+    label: "数据通道",
+  },
+
   time: {
     justNow: "刚刚",
     minutesAgo: "{n} 分钟前",

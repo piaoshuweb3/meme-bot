@@ -162,6 +162,12 @@ export const enUS: Messages = {
     apiKeyWarning: "API key (shown once)",
   },
 
+  realtime: {
+    live: "Live",
+    polling: "Polling (fallback)",
+    label: "Data channel",
+  },
+
   time: {
     justNow: "just now",
     minutesAgo: "{n} min ago",

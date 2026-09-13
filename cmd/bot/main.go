@@ -44,6 +44,7 @@ import (
 	"meme-bot/internal/strategy"
 	"meme-bot/internal/subscription"
 	"meme-bot/internal/user"
+	"meme-bot/internal/ws"
 )
 
 var flagConfig = flag.String("config", "configs/config.yaml", "配置文件路径")
@@ -127,6 +128,15 @@ func main() {
 		zap.Strings("registered", chain.Registered()),
 	)
 
+	// ---- WebSocket 实时推送 ----
+	hub := ws.NewHub(log)
+	wsHandler := hub.Handler(ws.HandlerConfig{
+		AllowedOrigins: cfg.Server.CORSAllowedOrigins,
+		RequireAuth:    false, // 内网面板：靠 Origin 白名单；如需令牌鉴权见 HandlerConfig.RequireAuth
+	})
+	// 告警扇出：既走 Telegram/日志，也实时推给前端
+	var alertSink model.AlertSink = &wsAlertSink{inner: alertMgr, hub: hub}
+
 	// ---- 地址画像与评分 ----
 	var profiles model.ProfileStore
 	if pool != nil {
@@ -151,7 +161,7 @@ func main() {
 
 	riskEngine := risk.New(cfg.Risk, stateStore, positions, reg, log)
 	executor := strategy.NewExecutor(
-		factory, swapsigner, solSigner, riskEngine, positions, alertMgr, reg, log,
+		factory, swapsigner, solSigner, riskEngine, positions, alertSink, reg, log,
 		cfg.Risk, dryRun, nativeTokens(cfg),
 	)
 
@@ -166,7 +176,7 @@ func main() {
 		RejectMintable:      true,
 		RejectWithBlacklist: true,
 	}
-	engine := strategy.NewSignalEngine(cfg.Signal, filter, marketPort, scorer, alertMgr, reg, log)
+	engine := strategy.NewSignalEngine(cfg.Signal, filter, marketPort, scorer, alertSink, reg, log)
 
 	// ---- SaaS 模块（需要数据库）----
 	var (
@@ -210,6 +220,7 @@ func main() {
 				"signer":         swapsigner != nil,
 				"smart_money":    smartMoney.Available(),
 				"alert_channels": alertMgr.Channels(),
+				"ws":             hub.Stats(),
 			}
 		},
 		MetricsHandler: reg.Handler(),
@@ -218,6 +229,7 @@ func main() {
 		Mode:           string(cfg.Mode),
 		GinMode:        cfg.Server.GinMode,
 		CORSOrigins:    cfg.Server.CORSAllowedOrigins,
+		WS:             wsHandler,
 		Chains:         factory.List(),
 	})
 
@@ -253,8 +265,11 @@ func main() {
 		}
 	}()
 
+	// ---- 事件泵：信号/持仓变化实时推送 ----
+	go wsEventPump(ctx, hub, engine, positions, log)
+
 	// ---- 信号衰减扫描 ----
-	go decayLoop(ctx, engine, alertMgr, log)
+	go decayLoop(ctx, engine, alertSink, log)
 
 	_ = newTokens // 新币发现：由 worker 或后续调度使用（Stage 2+）
 

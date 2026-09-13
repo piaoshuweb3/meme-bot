@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { StatusBadge } from "@/components/status-badge";
+import { useRealtime } from "@/hooks/use-realtime";
 import { api, type Signal } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 
@@ -13,6 +14,19 @@ export default function SignalsPage() {
   const [error, setError] = useState("");
   const [auto, setAuto] = useState(true);
   const [loading, setLoading] = useState(false);
+
+  // 实时推送：服务端检测到信号新增/状态变化即推送，前端无需等待轮询
+  const { connected } = useRealtime((evt) => {
+    if (evt.type !== "signal" || !evt.data) return;
+    const incoming = evt.data as Signal;
+    setSignals((prev) => {
+      const idx = prev.findIndex((s) => s.id === incoming.id);
+      if (idx === -1) return [incoming, ...prev].slice(0, 200);
+      const next = prev.slice();
+      next[idx] = incoming;
+      return next;
+    });
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -38,6 +52,13 @@ export default function SignalsPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold text-white">{t("signals.title")}</h1>
+        <span
+          className={`badge ${connected ? "bg-ok/20 text-ok" : "bg-slate-700 text-slate-300"}`}
+          title={t("realtime.label")}
+          aria-live="polite"
+        >
+          {connected ? t("realtime.live") : t("realtime.polling")}
+        </span>
         <button type="button" className="btn" onClick={() => void load()} aria-busy={loading}>
           {t("common.refresh")}
         </button>

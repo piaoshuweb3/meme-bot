@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { StatusBadge } from "@/components/status-badge";
+import { useRealtime } from "@/hooks/use-realtime";
 import { api, type Health, type Signal } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 
@@ -14,6 +15,18 @@ export default function DashboardPage() {
   const [error, setError] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [announce, setAnnounce] = useState<string>("");
+
+  const { connected } = useRealtime((evt) => {
+    if (evt.type !== "signal" || !evt.data) return;
+    const incoming = evt.data as Signal;
+    setSignals((prev) => {
+      const idx = prev.findIndex((s) => s.id === incoming.id);
+      if (idx === -1) return [incoming, ...prev].slice(0, 50);
+      const next = prev.slice();
+      next[idx] = incoming;
+      return next;
+    });
+  });
 
   const load = useCallback(async () => {
     try {
@@ -49,7 +62,16 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold text-white">{t("nav.overview")}</h1>
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="text-2xl font-semibold text-white">{t("nav.overview")}</h1>
+        <span
+          className={`badge ${connected ? "bg-ok/20 text-ok" : "bg-slate-700 text-slate-300"}`}
+          title={t("realtime.label")}
+          aria-live="polite"
+        >
+          {connected ? t("realtime.live") : t("realtime.polling")}
+        </span>
+      </div>
 
       {/* 状态播报区（屏幕阅读器） */}
       <p aria-live="polite" className="sr-only">
