@@ -43,6 +43,26 @@ chains:
     parse_transactions: true
     supported: true
 
+  # 测试网：仅用于「链上 USDC 收款」的灰度验证（supported: false → 不参与交易监控）
+  base-sepolia:
+    chain_id: "base-sepolia"
+    evm_chain_id: 84532
+    native_token:
+      address: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
+      symbol: "ETH"
+      decimals: 18
+    # 多端点：RPCPool 会对不健康节点自动故障切换（首轮探测到 sepolia.base.org 返回 EOF）
+    rpc_urls:
+      - "https://base-sepolia.gateway.tenderly.co"
+      - "https://base-sepolia-rpc.publicnode.com"
+      - "https://sepolia.base.org"
+    aggregator: "1inch"
+    aggregator_base_url: "https://api.1inch.dev/swap/v6.1"
+    confirmations: 12
+    min_liquidity_usd: 5000
+    # 说明：收款监听只需要 rpc_urls；supported=false 表示不启动交易适配器
+    supported: false
+
   # 预留第三条链（EVM 兼容即可零改动接入）
   bsc:
     chain_id: "bsc"
