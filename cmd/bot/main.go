@@ -144,13 +144,14 @@ func main() {
 		positions = strategy.NewMemoryPositions()
 	}
 	swapsigner := signer.SignerOrNil("MEMEBOT_CHAINS_BASE_PRIVATE_KEY", rpcByChain(cfg), log)
+	solSigner := signer.SolanaSignerOrNil("MEMEBOT_CHAINS_SOLANA_PRIVATE_KEY", log)
 	if swapsigner == nil && !dryRun {
 		log.Fatal("live 模式必须配置签名器（MEMEBOT_CHAINS_BASE_PRIVATE_KEY 或改用 KMS 签名实现）")
 	}
 
 	riskEngine := risk.New(cfg.Risk, stateStore, positions, reg, log)
 	executor := strategy.NewExecutor(
-		factory, swapsigner, riskEngine, positions, alertMgr, reg, log,
+		factory, swapsigner, solSigner, riskEngine, positions, alertMgr, reg, log,
 		cfg.Risk, dryRun, nativeTokens(cfg),
 	)
 

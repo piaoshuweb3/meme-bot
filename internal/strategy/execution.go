@@ -25,15 +25,17 @@ type AdapterProvider interface {
 //
 // 实现 model.ExecutorPort。dry_run 模式下不发送任何真实交易，只产出模拟订单与告警。
 type Executor struct {
-	adapters  AdapterProvider
-	signer    model.SwapSigner
-	risk      model.RiskPort
-	positions model.PositionStore
-	alerts    model.AlertSink
-	reg       *metrics.Registry
-	log       *zap.Logger
-	cfg       config.RiskConfig
-	dryRun    bool
+	adapters AdapterProvider
+	signer   model.SwapSigner
+	// solanaSigner 负责 Solana 交易签名（Ed25519，输出 base64）
+	solanaSigner model.SolanaTxSigner
+	risk         model.RiskPort
+	positions    model.PositionStore
+	alerts       model.AlertSink
+	reg          *metrics.Registry
+	log          *zap.Logger
+	cfg          config.RiskConfig
+	dryRun       bool
 	// nativeTokens 链 -> 原生代币地址（用于卖出时构造 TokenIn/TokenOut）
 	nativeTokens map[string]string
 	// confirmTimeout 等待交易确认的超时
@@ -44,6 +46,7 @@ type Executor struct {
 func NewExecutor(
 	adapters AdapterProvider,
 	signer model.SwapSigner,
+	solanaSigner model.SolanaTxSigner,
 	risk model.RiskPort,
 	positions model.PositionStore,
 	alerts model.AlertSink,
@@ -59,6 +62,7 @@ func NewExecutor(
 	return &Executor{
 		adapters:       adapters,
 		signer:         signer,
+		solanaSigner:   solanaSigner,
 		risk:           risk,
 		positions:      positions,
 		alerts:         alerts,
@@ -134,9 +138,17 @@ func (x *Executor) Execute(intent *model.TradeIntent) (*model.ExecutionResult, e
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	// 收款地址固定为签名地址（不接受外部任意指定收款地址，避免资金被引导到第三方）
+	// 收款地址固定为签名地址（拒绝外部任意指定收款地址，避免资金被引导到第三方）。
+	// 按链选择签名器：Solana 用 Ed25519 签名器，EVM 用 EIP-1559 签名器。
 	recipient := ""
-	if x.signer != nil {
+	if isSolanaChain(intent.Chain) {
+		if x.solanaSigner == nil {
+			return x.fail(order, "no solana signer configured（未配置 MEMEBOT_CHAINS_SOLANA_PRIVATE_KEY，拒绝构建交易）")
+		}
+		if addr, aerr := x.solanaSigner.Address(intent.Chain); aerr == nil {
+			recipient = addr
+		}
+	} else if x.signer != nil {
 		if addr, aerr := x.signer.Address(intent.Chain); aerr == nil {
 			recipient = addr
 		}
@@ -168,13 +180,26 @@ func (x *Executor) Execute(intent *model.TradeIntent) (*model.ExecutionResult, e
 		}
 	}
 
-	// 3) 签名
-	if x.signer == nil {
-		return x.fail(order, "no signer configured（未配置签名器，拒绝发送交易）")
-	}
-	rawTx, err := x.signer.SignSwap(ctx, intent.Chain, unsigned, params)
-	if err != nil {
-		return x.fail(order, "sign swap: "+err.Error())
+	// 3) 签名：Solana 交易已组装成 wire-format（Serialized 非空），签 Ed25519；EVM 走 EIP-1559
+	var rawTx string
+	if len(unsigned.Serialized) > 0 {
+		if x.solanaSigner == nil {
+			return x.fail(order, "no solana signer configured（未配置 Solana 私钥，拒绝发送交易）")
+		}
+		signed, serr := x.solanaSigner.SignSolanaTx(ctx, intent.Chain, unsigned.Serialized)
+		if serr != nil {
+			return x.fail(order, "sign solana tx: "+serr.Error())
+		}
+		rawTx = signed
+	} else {
+		if x.signer == nil {
+			return x.fail(order, "no signer configured（未配置签名器，拒绝发送交易）")
+		}
+		signed, serr := x.signer.SignSwap(ctx, intent.Chain, unsigned, params)
+		if serr != nil {
+			return x.fail(order, "sign swap: "+serr.Error())
+		}
+		rawTx = signed
 	}
 
 	// 4) 广播（适配器内部私有通道优先）
@@ -363,6 +388,11 @@ func (x *Executor) fail(order *model.Order, reason string) (*model.ExecutionResu
 		})
 	}
 	return &model.ExecutionResult{Order: order, Status: order.Status, Error: reason}, fmt.Errorf("executor: %s", reason)
+}
+
+// isSolanaChain 判断是否 Solana 链（决定签名与交易编码路径）。
+func isSolanaChain(chain string) bool {
+	return strings.EqualFold(strings.TrimSpace(chain), "solana")
 }
 
 func (x *Executor) nativeToken(chain string) string {
