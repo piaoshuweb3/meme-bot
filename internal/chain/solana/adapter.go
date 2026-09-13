@@ -14,6 +14,7 @@ package solana
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -446,13 +447,16 @@ func (a *Adapter) SubscribeSwaps(ctx context.Context, token string, handler func
 				if s.BlockTime != nil {
 					at = time.Unix(*s.BlockTime, 0).UTC()
 				}
-				handler(model.SwapEvent{
+				ev := model.SwapEvent{
 					Chain:  a.ChainID(),
 					TxHash: s.Signature,
 					Pool:   account,
 					Sender: account,
 					At:     at,
-				})
+				}
+				// 金额级解析：拉取 jsonParsed 交易并按余额差值判定方向与金额
+				a.enrichEventWithParsedSwap(ctx, &ev)
+				handler(ev)
 			}
 			if len(seen) > 4096 {
 				seen = make(map[string]struct{}, 256)
@@ -471,6 +475,65 @@ type signatureInfo struct {
 	Slot      uint64 `json:"slot"`
 	BlockTime *int64 `json:"blockTime"`
 	Err       any    `json:"err"`
+}
+
+// parseTransaction 拉取并解析一笔交易（jsonParsed 编码）。
+func (a *Adapter) parseTransaction(ctx context.Context, signature, owner string) (*ParsedSwap, error) {
+	var raw json.RawMessage
+	params := []any{signature, map[string]any{
+		"encoding":                       "jsonParsed",
+		"maxSupportedTransactionVersion": 0,
+	}}
+	if err := a.rpc.Call(ctx, "getTransaction", params, &raw); err != nil {
+		return nil, err
+	}
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, fmt.Errorf("solana: 交易 %s 不可用（可能已超出历史窗口）", signature)
+	}
+	return ParseSwapFromTransaction(raw, owner)
+}
+
+// enrichEventWithParsedSwap 用金额级解析结果补全事件；失败时保留签名级信息（降级而非丢弃）。
+func (a *Adapter) enrichEventWithParsedSwap(ctx context.Context, ev *model.SwapEvent) {
+	if ev == nil || !a.cfg.ParseTransactions {
+		return
+	}
+	parsed, err := a.parseTransaction(ctx, ev.TxHash, "")
+	if err != nil {
+		a.log.Debug("solana: 金额级解析失败，退化为签名级事件",
+			zap.String("tx", ev.TxHash), zap.Error(err))
+		return
+	}
+	if parsed == nil || parsed.Failed {
+		return
+	}
+
+	ev.TokenIn, ev.TokenOut = parsed.TokenIn, parsed.TokenOut
+	ev.AmountIn, ev.AmountOut = parsed.AmountIn, parsed.AmountOut
+	if parsed.Owner != "" {
+		ev.Sender = parsed.Owner
+	}
+	if a.deps.Market != nil && parsed.TokenOut != "" && parsed.AmountOut != nil {
+		if price, _, perr := a.deps.Market.PriceUSD(ctx, a.ChainID(), parsed.TokenOut); perr == nil && price > 0 {
+			ev.PriceUSD = price
+			ev.AmountUSD = unitsToFloat(parsed.AmountOut, parsed.DecimalsOut) * price
+		}
+	}
+}
+
+// unitsToFloat 最小单位 → 浮点数量（用于 USD 估算）。
+func unitsToFloat(v *big.Int, decimals uint8) float64 {
+	if v == nil {
+		return 0
+	}
+	f := new(big.Float).SetInt(v)
+	scale := new(big.Float).SetFloat64(1)
+	for i := uint8(0); i < decimals; i++ {
+		scale.Mul(scale, big.NewFloat(10))
+	}
+	f.Quo(f, scale)
+	out, _ := f.Float64()
+	return out
 }
 
 func (a *Adapter) recentSignatures(ctx context.Context, account string, limit int) ([]signatureInfo, error) {

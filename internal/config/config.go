@@ -112,7 +112,10 @@ type Chain struct {
 	Confirmations               int         `mapstructure:"confirmations"`
 	MinLiquidityUSD             float64     `mapstructure:"min_liquidity_usd"`
 	MaxPriorityFeeMicroLamports uint64      `mapstructure:"max_priority_fee_micro_lamports"`
-	Supported                   bool        `mapstructure:"supported"`
+	// ParseTransactions 是否拉取并解析交易以得到「金额级」事件（Solana 专用）。
+	// 关闭时退化为签名级轮询（开销更小但无金额/方向）。
+	ParseTransactions bool `mapstructure:"parse_transactions"`
+	Supported         bool `mapstructure:"supported"`
 }
 
 // ScoreConfig 地址评分参数。

@@ -99,7 +99,7 @@ CI（`.github/workflows/ci.yml`）在每次推送/PR 重复上述检查（后端
 | 项 | 状态 | 说明 |
 |----|------|------|
 | Base V3 池子 Swap 事件解析 | ✅ 已完成 | `internal/chain/base/v3.go`：32 字节二补码有符号金额、方向判定（正=流入池子）、pool token0/1 映射、USD 补齐；3 个单测 |
-| Solana Swap 金额级解析 | 部分 | 当前基于 `getSignaturesForAddress` 轮询，需 Geyser/Jupiter 解析补全 |
+| Solana 金额级 Swap 解析 | ✅ 已完成 | `internal/chain/solana/parse.go`：**余额差值法**（`pre/postTokenBalances`）提取账户净代币变化并判定买卖方向，**天然聚合 Jupiter 多跳路由**、兼容 SPL Token 与 Token-2022；适配器发现新签名后拉 `getTransaction(jsonParsed)` 补全金额/方向/USD（失败自动降级为签名级事件）；开关 `chains.solana.parse_transactions`；8 个单测（买入/卖出/失败交易/无变化/owner 回退/多跳聚合/非法输入/差值计算） |
 | Solana 交易签名 | ✅ 已完成 | `internal/chain/signer/solana.go`：wire-format 解析 + Ed25519 签名 + **fee payer 防盲签校验**；6 个单测（含拒绝他人 fee payer） |
 | 地址画像成本基准 | ✅ 已完成 | `internal/address/costbasis.go`：**加权平均成本法**从流水重放真实已实现盈亏（数量由金额/价格推算）；画像的 WinRate/ProfitFactor/MaxDrawdown/Consistency 全部改用该口径；4 个单测（含部分平仓、超卖截断、缺价格跳过） |
 | 成交活跃度倍数 | ✅ 已完成 | `internal/market/rolling.go`：**滚动窗口**按代币维护成交额样本，倍数 = 当前值 / 自身近期均值（跨代币可比）；样本不足时返回 0（暂不判定）而非误报；已接入信号引擎（`WithRolling`），未注入时回退旧近似；3 个单测 |
@@ -134,6 +134,6 @@ CI（`.github/workflows/ci.yml`）在每次推送/PR 重复上述检查（后端
 ## 6. 建议的下一步
 
 1. **本地联调**：`make infra && make migrate && make run`，配置 `MEMEBOT_WATCHLIST=base:<池子地址>` 观察 dry_run 下的完整链路（安全过滤 → 流动性 → 大额买入 → 跟风确认 → 风控 → 模拟下单 → 告警 → 前端实时推送）。
-2. **剩余完善项**：地址画像真实成本基准与成交活跃度倍数（需时序库滚动均值）、Solana 事件金额级解析（需 Geyser/Jupiter）、支付渠道真实对接（回调与验签已就绪）。
+2. **灰度上线**：技术闭环已完整（数据 → 策略 → 风控 → 执行 → 告警 → 实时面板 → SaaS 收费 → 回测）。建议顺序：① 本地 `dry_run` 联调；② USDC 收款先在 **base-sepolia** 小额验证（订阅激活 + 返佣入账）；③ 按 `docs/RUNBOOK.md` 第 6 节清单确认后，再切 `live` 并用最小仓位灰度。
 3. **接入真实收款**：注册支付回调路由（`/api/v1/payments/webhook`，需验签），对接链上 USDC 或 Stripe。
 4. **上线前**：按 `docs/RUNBOOK.md` 第 6 节清单逐项确认，再切 `live` 并用最小仓位灰度。

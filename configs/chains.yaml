@@ -38,6 +38,9 @@ chains:
     min_liquidity_usd: 20000
     # 优先费动态计算上限（micro-lamports / CU）
     max_priority_fee_micro_lamports: 200000
+    # 金额级事件解析：拉取 getTransaction(jsonParsed) 并用余额差值法提取方向与金额
+    # （关闭时退化为签名级轮询：开销更小，但没有金额与买卖方向）
+    parse_transactions: true
     supported: true
 
   # 预留第三条链（EVM 兼容即可零改动接入）
