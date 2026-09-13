@@ -33,6 +33,9 @@ type SignalEngine struct {
 	reg    *metrics.Registry
 	log    *zap.Logger
 
+	// now 可注入时钟：实盘为 time.Now；回测注入"当前事件时间"，使 TTL/冷却语义正确。
+	now func() time.Time
+
 	mu         sync.Mutex
 	active     map[string]*model.Signal
 	buyers     map[string]map[string]time.Time
@@ -62,6 +65,7 @@ func NewSignalEngine(
 		cfg.LargeBuyMultiple = 2.0
 	}
 	return &SignalEngine{
+		now:        time.Now,
 		cfg:        cfg,
 		filter:     filter,
 		market:     market,
@@ -73,6 +77,14 @@ func NewSignalEngine(
 		buyers:     make(map[string]map[string]time.Time),
 		lastSignal: make(map[string]time.Time),
 	}
+}
+
+// WithClock 注入时钟（回测场景：用事件时间驱动 TTL / 冷却 / 衰减）。
+func (e *SignalEngine) WithClock(now func() time.Time) *SignalEngine {
+	if now != nil {
+		e.now = now
+	}
+	return e
 }
 
 var _ model.StrategyPort = (*SignalEngine)(nil)
@@ -132,7 +144,7 @@ func (e *SignalEngine) Evaluate(ev model.SwapEvent) (*model.Signal, error) {
 	}
 	e.mu.Unlock()
 
-	now := time.Now().UTC()
+	now := e.now().UTC()
 	sig := &model.Signal{
 		ID:             uuid.NewString(),
 		Chain:          ev.Chain,
@@ -177,7 +189,7 @@ func (e *SignalEngine) Confirm(sig *model.Signal) (*model.Signal, error) {
 	if sig == nil {
 		return nil, fmt.Errorf("strategy: nil signal")
 	}
-	now := time.Now().UTC()
+	now := e.now().UTC()
 
 	if now.After(sig.ExpiresAt) {
 		sig.Status = model.SignalExpired
