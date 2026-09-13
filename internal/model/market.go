@@ -147,14 +147,16 @@ type PoolInfo struct {
 
 // SwapEvent 链上 Swap 事件（事件驱动核心输入）。
 type SwapEvent struct {
-	Chain     string    `json:"chain"`
-	TxHash    string    `json:"tx_hash"`
-	Pool      string    `json:"pool"`
-	TokenIn   string    `json:"token_in"`
-	TokenOut  string    `json:"token_out"`
-	AmountIn  *big.Int  `json:"amount_in"`
-	AmountOut *big.Int  `json:"amount_out"`
-	Sender    string    `json:"sender"`
+	Chain     string   `json:"chain"`
+	TxHash    string   `json:"tx_hash"`
+	Pool      string   `json:"pool"`
+	TokenIn   string   `json:"token_in"`
+	TokenOut  string   `json:"token_out"`
+	AmountIn  *big.Int `json:"amount_in"`
+	AmountOut *big.Int `json:"amount_out"`
+	Sender    string   `json:"sender"`
+	// Recipient 收款地址（V3 事件显式携带；V2 通常等于 sender）
+	Recipient string    `json:"recipient,omitempty"`
 	AmountUSD float64   `json:"amount_usd"`
 	PriceUSD  float64   `json:"price_usd"`
 	At        time.Time `json:"at"`

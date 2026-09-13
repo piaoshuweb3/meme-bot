@@ -570,8 +570,8 @@ func (a *Adapter) parseSwapLog(ctx context.Context, lg types.Log) (model.SwapEve
 		a.enrichUSD(ctx, &ev)
 		return ev, true
 	case v3SwapTopic():
-		// V3：仅记录基础信息（金额换算需要 sqrtPriceX96 数学，Stage 3 补全）
-		return ev, true
+		// V3：解析有符号金额并判定方向（见 v3.go）
+		return a.parseV3SwapLog(ctx, lg)
 	default:
 		return ev, false
 	}

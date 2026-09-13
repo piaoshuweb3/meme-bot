@@ -58,3 +58,7 @@ logs/
 # 如需一并提交：删除下面两行后执行 `git add -f MEME.docx`
 MEME.docx
 *.docx
+
+# Next.js / TypeScript 增量构建缓存（不应入库）
+*.tsbuildinfo
+web/tsconfig.tsbuildinfo
