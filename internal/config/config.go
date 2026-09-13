@@ -282,6 +282,13 @@ func (c *Config) Validate() error {
 		// live 模式必须显式关闭 dry_run_default，防误开
 		return fmt.Errorf("mode=live 时 risk.dry_run_default 必须为 false（安全门禁）")
 	}
+	// 鉴权密钥必须显式配置：否则登录/API Key 鉴权在运行期才失败（fail-fast 更安全）
+	if strings.TrimSpace(c.Auth.JWTSecret) == "" {
+		return fmt.Errorf("auth.jwt_secret 未配置：请设置环境变量 MEMEBOT_AUTH_JWT_SECRET（建议 32+ 位随机串）")
+	}
+	if len(c.Auth.JWTSecret) < 16 {
+		return fmt.Errorf("auth.jwt_secret 过短（至少 16 位，建议 32+）")
+	}
 	return nil
 }
 

@@ -12,7 +12,8 @@ services:
       POSTGRES_DB: smartmoney
       TZ: UTC
     ports:
-      - "5432:5432"
+      # 端口可配置：本机已有 PostgreSQL 占用 5432 时用 POSTGRES_PORT=5433 启动
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -27,7 +28,7 @@ services:
     container_name: memebot-redis
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redisdata:/data
     healthcheck:

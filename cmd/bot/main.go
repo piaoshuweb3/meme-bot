@@ -203,6 +203,7 @@ func main() {
 		MetricsPath:    cfg.Metrics.Path,
 		JWTSecret:      cfg.Auth.JWTSecret,
 		Mode:           string(cfg.Mode),
+		GinMode:        cfg.Server.GinMode,
 		Chains:         factory.List(),
 	})
 

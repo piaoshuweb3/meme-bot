@@ -35,11 +35,19 @@ type Deps struct {
 
 	JWTSecret string
 	Mode      string
+	GinMode   string
 	Chains    []string
 }
 
 // SetupRouter 装配路由。
+//
+// gin 模式由配置驱动（configs/config.yaml 的 server.gin_mode）：
+// release 用于生产（关闭 debug 日志），debug 便于本地排查。
 func SetupRouter(d Deps) *gin.Engine {
+	if d.GinMode != "" {
+		gin.SetMode(d.GinMode)
+	}
+
 	r := gin.New()
 	r.Use(gin.Recovery())
 	if d.Mode != "live" {
