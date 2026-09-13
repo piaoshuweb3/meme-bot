@@ -1,0 +1,81 @@
+# 多链参数配置：新增一条链 = 增加一个 adapter + 这里一段配置，上层策略零修改
+chains:
+  base:
+    chain_id: "base"
+    evm_chain_id: 8453
+    native_token:
+      address: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
+      symbol: "ETH"
+      decimals: 18
+    rpc_urls:
+      - "https://mainnet.base.org"
+      - "https://base.llamarpc.com"
+    # 聚合器（优先）与降级路由器
+    aggregator: "1inch"
+    aggregator_base_url: "https://api.1inch.dev/swap/v6.1"
+    aggregator_api_key_env: "MEMEBOT_CHAINS_BASE_AGGREGATOR_API_KEY"
+    fallback_routers:
+      - "0x2626664c2603336E57B271c5C0b26F421741e481" # Uniswap V3 SwapRouter02 (Base)
+      - "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43" # Aerodrome Router
+    private_tx_rpc: "https://rpc.flashbots.net"
+    confirmations: 12
+    min_liquidity_usd: 25000
+    supported: true
+
+  solana:
+    chain_id: "solana"
+    evm_chain_id: 0
+    native_token:
+      address: "So11111111111111111111111111111111111111112"
+      symbol: "SOL"
+      decimals: 9
+    rpc_urls:
+      - "https://api.mainnet-beta.solana.com"
+    aggregator: "jupiter"
+    aggregator_base_url: "https://quote-api.jup.ag/v6"
+    aggregator_api_key_env: ""
+    confirmations: 1
+    min_liquidity_usd: 20000
+    # 优先费动态计算上限（micro-lamports / CU）
+    max_priority_fee_micro_lamports: 200000
+    supported: true
+
+  # 预留第三条链（EVM 兼容即可零改动接入）
+  bsc:
+    chain_id: "bsc"
+    evm_chain_id: 56
+    native_token:
+      address: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
+      symbol: "BNB"
+      decimals: 18
+    rpc_urls:
+      - "https://bsc-dataseed.binance.org"
+    aggregator: "1inch"
+    aggregator_base_url: "https://api.1inch.dev/swap/v6.1"
+    aggregator_api_key_env: "MEMEBOT_CHAINS_BSC_AGGREGATOR_API_KEY"
+    confirmations: 12
+    min_liquidity_usd: 20000
+    supported: false
+
+# 外部数据源优先级（数值越小优先级越高）
+providers:
+  onchain_events:
+    priority: 1
+    source: "rpc_websocket"
+  security:
+    priority: 1
+    sources: ["goplus", "rugcheck"]
+  market:
+    priority: 2
+    sources: ["dexscreener", "birdeye"]
+  new_token_feed:
+    priority: 2
+    sources: ["pumpfun", "dexscreener", "moralis"]
+  smart_money_tags:
+    priority: 3
+    sources: ["gmgn", "bitquery"]
+  social:
+    priority: 4
+    sources: ["x", "telegram"]
+    # 社交数据必须做机器人过滤后使用
+    require_bot_filter: true

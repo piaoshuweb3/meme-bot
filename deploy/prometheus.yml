@@ -1,0 +1,14 @@
+# Prometheus 抓取配置（Stage 6 可观测性）
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: memebot-bot
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["bot:8080"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

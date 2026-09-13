@@ -1,0 +1,60 @@
+# ---- 编译产物 / 缓存 ----
+bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+tmp/
+.cache/
+
+# ---- 环境与密钥（严禁提交）----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+wallet/
+
+# ---- Go ----
+vendor/
+
+# ---- Node / Next.js ----
+node_modules/
+web/.next/
+web/out/
+web/.turbo/
+web/coverage/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---- Flutter / Dart ----
+app/.dart_tool/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/build/
+app/ios/Pods/
+app/android/.gradle/
+app/**/GeneratedPluginRegistrant.*
+
+# ---- 编辑器 / 系统 ----
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ---- 运行期数据 ----
+data/
+logs/
+*.log
+
+# ---- 内部需求文档（含策略细节，默认不进公开仓库）----
+# 如需一并提交：删除下面两行后执行 `git add -f MEME.docx`
+MEME.docx
+*.docx

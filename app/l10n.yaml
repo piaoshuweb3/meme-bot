@@ -1,0 +1,15 @@
+# Flutter 官方本地化生成器配置（flutter gen-l10n）
+#
+# 说明：当前项目使用 `lib/l10n/app_localizations.dart` 中**手写**的
+# LocalizationsDelegate（保证在任何环境下无需代码生成即可编译运行）。
+# 上面的 ARB 文件是标准的翻译源，也作为该手写实现的“单一事实来源”对照物。
+#
+# 如果希望改用官方生成器：
+#   1) 在 pubspec.yaml 的 flutter 段设置 `generate: true`
+#   2) 删除 lib/l10n/app_localizations.dart（否则生成物会被手写文件覆盖）
+#   3) 运行 `flutter gen-l10n` 或 `flutter pub get`
+arb-dir: lib/l10n
+template-arb-file: app_en.arb
+output-localization-file: app_localizations.g.dart
+output-dir: lib/l10n
+nullable-getter: false

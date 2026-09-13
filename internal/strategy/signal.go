@@ -1,0 +1,332 @@
+// Package strategy 实现信号漏斗与执行引擎（对应文书的逻辑层与执行层）。
+package strategy
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/google/uuid"
+	"go.uber.org/zap"
+
+	"meme-bot/internal/config"
+	"meme-bot/internal/metrics"
+	"meme-bot/internal/model"
+)
+
+// SignalEngine 自主信号漏斗 + 跟单信号（实现 model.StrategyPort）。
+//
+// 漏斗顺序（宁缺毋滥）：
+//  1. 静态安全过滤（蜜罐 / mint / 黑名单 / 高税 / 未放弃权限）
+//  2. 流动性门槛
+//  3. 大额买入判定（相对该地址历史中位数）
+//  4. 冷却窗口 + 信号 TTL 衰减
+//  5. 跟风确认（窗口内出现独立后续买家）
+type SignalEngine struct {
+	cfg    config.SignalConfig
+	filter model.SignalFilter
+	market model.MarketPort
+	scorer model.ScorerPort
+	alerts model.AlertSink
+	reg    *metrics.Registry
+	log    *zap.Logger
+
+	mu         sync.Mutex
+	active     map[string]*model.Signal
+	buyers     map[string]map[string]time.Time
+	lastSignal map[string]time.Time
+}
+
+// NewSignalEngine 构建信号引擎。
+func NewSignalEngine(
+	cfg config.SignalConfig,
+	filter model.SignalFilter,
+	market model.MarketPort,
+	scorer model.ScorerPort,
+	alerts model.AlertSink,
+	reg *metrics.Registry,
+	log *zap.Logger,
+) *SignalEngine {
+	if log == nil {
+		log = zap.NewNop()
+	}
+	if cfg.TTLMinutes <= 0 {
+		cfg.TTLMinutes = 30
+	}
+	if cfg.FollowConfirmWindowMinutes <= 0 {
+		cfg.FollowConfirmWindowMinutes = 30
+	}
+	if cfg.LargeBuyMultiple <= 0 {
+		cfg.LargeBuyMultiple = 2.0
+	}
+	return &SignalEngine{
+		cfg:        cfg,
+		filter:     filter,
+		market:     market,
+		scorer:     scorer,
+		alerts:     alerts,
+		reg:        reg,
+		log:        log,
+		active:     make(map[string]*model.Signal),
+		buyers:     make(map[string]map[string]time.Time),
+		lastSignal: make(map[string]time.Time),
+	}
+}
+
+var _ model.StrategyPort = (*SignalEngine)(nil)
+
+// Evaluate 实现 model.StrategyPort：对一次 Swap 事件做漏斗判定。
+func (e *SignalEngine) Evaluate(ev model.SwapEvent) (*model.Signal, error) {
+	if e.reg != nil {
+		e.reg.Inc("memebot_swaps_observed_total", 1)
+	}
+
+	// 只处理“买入”方向：TokenOut 是被买走的代币
+	token := strings.TrimSpace(ev.TokenOut)
+	if token == "" || ev.AmountUSD <= 0 {
+		return nil, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	// 1) 静态安全过滤
+	security, err := e.market.Security(ctx, ev.Chain, token)
+	if err != nil {
+		e.log.Debug("security check failed", zap.String("token", token), zap.Error(err))
+		return nil, nil
+	}
+	if pass, reason := e.securityPass(security); !pass {
+		e.recordFiltered(token, reason)
+		return nil, nil
+	}
+
+	// 2) 流动性门槛
+	liquidity, err := e.market.Liquidity(ctx, ev.Chain, token)
+	if err != nil {
+		return nil, nil
+	}
+	if e.filter.MinLiquidityUSD > 0 && liquidity.LiquidityUSD < e.filter.MinLiquidityUSD {
+		e.recordFiltered(token, fmt.Sprintf("流动性不足 %.0f < %.0f", liquidity.LiquidityUSD, e.filter.MinLiquidityUSD))
+		return nil, nil
+	}
+
+	// 3) 大额买入判定（跟单信号的前提）
+	large := false
+	if e.scorer != nil && ev.Sender != "" {
+		if ok, err := e.scorer.IsLargeBuy(ctx, ev.Chain, ev.Sender, ev.AmountUSD); err == nil {
+			large = ok
+		} else {
+			e.log.Debug("large buy check failed", zap.Error(err))
+		}
+	}
+
+	// 4) 冷却窗口
+	e.mu.Lock()
+	if last, ok := e.lastSignal[token]; ok && e.cfg.CooldownMinutes > 0 {
+		if time.Since(last) < time.Duration(e.cfg.CooldownMinutes)*time.Minute {
+			e.mu.Unlock()
+			return nil, nil
+		}
+	}
+	e.mu.Unlock()
+
+	now := time.Now().UTC()
+	sig := &model.Signal{
+		ID:             uuid.NewString(),
+		Chain:          ev.Chain,
+		Token:          token,
+		TokenSymbol:    token[:min(len(token), 12)],
+		Source:         model.SourceFollow,
+		TriggerAddress: ev.Sender,
+		AmountUSD:      ev.AmountUSD,
+		PriceUSD:       ev.PriceUSD,
+		LiquidityUSD:   liquidity.LiquidityUSD,
+		VolumeSpike:    e.volumeMultiple(liquidity),
+		Security:       *security,
+		Decay:          1.0,
+		Status:         model.SignalPending,
+		CreatedAt:      now,
+		ExpiresAt:      now.Add(time.Duration(e.cfg.TTLMinutes) * time.Minute),
+		Reason:         "聪明钱大额买入",
+	}
+	if !large {
+		// 非大额买入：只记录买家（用于跟风确认），不生成信号
+		e.trackBuyer(token, ev.Sender, now)
+		return nil, nil
+	}
+
+	e.mu.Lock()
+	e.active[sig.ID] = sig
+	e.lastSignal[token] = now
+	e.mu.Unlock()
+	e.trackBuyer(token, ev.Sender, now)
+
+	if e.reg != nil {
+		e.reg.Inc("memebot_signals_total", 1)
+	}
+	e.log.Info("signal generated",
+		zap.String("id", sig.ID), zap.String("chain", sig.Chain), zap.String("token", sig.Token),
+		zap.Float64("amount_usd", sig.AmountUSD), zap.Float64("liquidity_usd", sig.LiquidityUSD))
+	return sig, nil
+}
+
+// Confirm 实现 model.StrategyPort：确认信号（跟风确认 + TTL 检查）。
+func (e *SignalEngine) Confirm(sig *model.Signal) (*model.Signal, error) {
+	if sig == nil {
+		return nil, fmt.Errorf("strategy: nil signal")
+	}
+	now := time.Now().UTC()
+
+	if now.After(sig.ExpiresAt) {
+		sig.Status = model.SignalExpired
+		sig.Decay = 0
+		e.drop(sig.ID)
+		return sig, nil
+	}
+
+	// 跟风确认：窗口内出现 ≥2 个独立买家（含触发者）
+	window := time.Duration(e.cfg.FollowConfirmWindowMinutes) * time.Minute
+	e.mu.Lock()
+	buyers := e.buyers[sig.Token]
+	distinct := 0
+	for _, at := range buyers {
+		if now.Sub(at) <= window {
+			distinct++
+		}
+	}
+	e.mu.Unlock()
+
+	sig.FollowConfirmed = distinct >= 2
+	if sig.FollowConfirmed {
+		sig.Status = model.SignalConfirmed
+		sig.ConfirmedAt = now
+		sig.Decay = 1.0
+	}
+	return sig, nil
+}
+
+// Active 实现 model.StrategyPort：当前活跃信号。
+func (e *SignalEngine) Active() []*model.Signal {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := make([]*model.Signal, 0, len(e.active))
+	for _, s := range e.active {
+		out = append(out, s)
+	}
+	return out
+}
+
+// Decay 扫描并衰减过期信号（worker 周期调用）。
+func (e *SignalEngine) Decay(now time.Time) []*model.Signal {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	var expired []*model.Signal
+	for id, s := range e.active {
+		total := s.ExpiresAt.Sub(s.CreatedAt)
+		if total <= 0 {
+			delete(e.active, id)
+			continue
+		}
+		remaining := s.ExpiresAt.Sub(now)
+		if remaining <= 0 {
+			s.Status = model.SignalExpired
+			s.Decay = 0
+			expired = append(expired, s)
+			delete(e.active, id)
+			continue
+		}
+		s.Decay = float64(remaining) / float64(total)
+	}
+	return expired
+}
+
+// TrackTrade 记录已成交交易（把地址行为写入画像库，由调用方提供 store）。
+func (e *SignalEngine) securityPass(rep *model.SecurityReport) (bool, string) {
+	if rep == nil {
+		if e.filter.RejectHoneypot {
+			return false, "无安全报告（保守拒绝）"
+		}
+		return true, ""
+	}
+	if e.filter.RejectHoneypot && rep.IsHoneypot {
+		return false, "蜜罐合约"
+	}
+	if e.filter.RejectMintable && rep.HasMint {
+		return false, "存在增发权限"
+	}
+	if e.filter.RejectWithBlacklist && rep.HasBlacklist {
+		return false, "存在黑名单权限"
+	}
+	if e.filter.RequireOpenSource && !rep.IsOpenSource {
+		return false, "合约未开源"
+	}
+	if e.filter.MaxBuyTax > 0 && rep.BuyTax > e.filter.MaxBuyTax {
+		return false, fmt.Sprintf("买入税过高 %.2f", rep.BuyTax)
+	}
+	if e.filter.MaxSellTax > 0 && rep.SellTax > e.filter.MaxSellTax {
+		return false, fmt.Sprintf("卖出税过高 %.2f", rep.SellTax)
+	}
+	return true, ""
+}
+
+func (e *SignalEngine) recordFiltered(token, reason string) {
+	if e.reg != nil {
+		e.reg.Inc("memebot_signals_filtered_total", 1)
+	}
+	e.log.Debug("signal filtered", zap.String("token", token), zap.String("reason", reason))
+}
+
+func (e *SignalEngine) trackBuyer(token, buyer string, at time.Time) {
+	if strings.TrimSpace(buyer) == "" {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	m := e.buyers[token]
+	if m == nil {
+		m = make(map[string]time.Time)
+		e.buyers[token] = m
+	}
+	m[buyer] = at
+
+	// 控制内存增长：超过 500 个代币时清理最旧的
+	if len(e.buyers) > 500 {
+		for k, v := range e.buyers {
+			var newest time.Time
+			for _, t := range v {
+				if t.After(newest) {
+					newest = t
+				}
+			}
+			if time.Since(newest) > 2*time.Hour {
+				delete(e.buyers, k)
+			}
+		}
+	}
+}
+
+func (e *SignalEngine) drop(id string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	delete(e.active, id)
+}
+
+// volumeMultiple 用 24h 成交量与流动性的比值近似“成交活跃度倍数”。
+//
+// 真实实现应基于滚动均值（需要时序库）；此处给出可用的近似口径并在文档中标注。
+func (e *SignalEngine) volumeMultiple(liq *model.LiquidityInfo) float64 {
+	if liq == nil || liq.LiquidityUSD <= 0 {
+		return 0
+	}
+	return liq.Volume24hUSD / liq.LiquidityUSD
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}

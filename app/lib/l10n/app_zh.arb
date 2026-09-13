@@ -1,0 +1,71 @@
+{
+  "@@locale": "zh",
+  "appTitle": "meme-bot",
+  "@appTitle": {
+    "description": "应用标题"
+  },
+  "navOverview": "总览",
+  "navSignals": "信号",
+  "navPositions": "持仓",
+  "commonRefresh": "刷新",
+  "commonRetry": "重试",
+  "commonLoading": "加载中…",
+  "commonLanguage": "语言",
+  "commonChain": "链",
+  "commonToken": "代币",
+  "commonAmount": "金额",
+  "commonLiquidity": "流动性",
+  "commonStatus": "状态",
+  "commonEntryPrice": "入场价",
+  "commonCurrentPrice": "现价",
+  "commonPnl": "浮动盈亏",
+  "settingsBaseUrlTitle": "后端地址",
+  "settingsBaseUrlHint": "http://10.0.2.2:8080",
+  "settingsBaseUrlHelp": "Android 模拟器访问宿主机用 10.0.2.2；真机用局域网 IP",
+  "settingsCancel": "取消",
+  "settingsSave": "保存",
+  "healthMode": "运行模式",
+  "healthChains": "已就绪链",
+  "healthDatabase": "数据库",
+  "healthSigner": "签名器",
+  "healthConnected": "已连接",
+  "healthNotConnected": "未连接",
+  "healthLoaded": "已加载",
+  "healthNotLoaded": "未加载",
+  "healthDatabaseOkHint": "SaaS 功能可用",
+  "healthDatabaseDownHint": "降级模式",
+  "healthDryRunHint": "dry_run：不发送真实交易",
+  "healthLiveHint": "live：请谨慎操作",
+  "healthUnavailable": "无法连接后端（{base}）：{error}",
+  "@healthUnavailable": {
+    "placeholders": {
+      "base": { "type": "String" },
+      "error": { "type": "String" }
+    }
+  },
+  "riskTitle": "风险控制",
+  "riskDescription": "熔断后所有交易（含 Agent 发起）都会被拒绝，直到手动恢复。",
+  "riskPause": "一键熔断",
+  "riskResume": "恢复交易",
+  "riskPauseReason": "App 人工熔断",
+  "signalsTitle": "信号流",
+  "signalsEmpty": "暂无活跃信号。\n信号需同时满足：安全过滤 + 流动性门槛 + 大额买入 + 冷却窗口。",
+  "signalsSource": "来源",
+  "signalsDecay": "衰减",
+  "signalsStatusPending": "待确认",
+  "signalsStatusConfirmed": "已确认",
+  "signalsStatusExecuted": "已执行",
+  "signalsStatusExpired": "已过期",
+  "signalsStatusRejected": "已拒绝",
+  "signalsLoadFailed": "加载失败：{error}",
+  "@signalsLoadFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "positionsTitle": "持仓",
+  "positionsEmpty": "当前无持仓",
+  "loginEmail": "邮箱",
+  "loginPassword": "密码",
+  "loginSignIn": "登录"
+}

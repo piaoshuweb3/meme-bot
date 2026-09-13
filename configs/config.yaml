@@ -1,0 +1,101 @@
+# meme-bot 主配置（不包含任何密钥；密钥一律走环境变量）
+# 环境变量覆盖规则：MEMEBOT_<SECTION>_<KEY>，例如 MEMEBOT_MODE、MEMEBOT_SERVER_PORT
+
+# 运行模式：dry_run（默认，只做模拟与告警，不发送真实交易）| live
+mode: dry_run
+
+server:
+  port: 8080
+  gin_mode: release
+  read_timeout_seconds: 15
+  write_timeout_seconds: 30
+  shutdown_timeout_seconds: 10
+
+database:
+  dsn: "postgres://bot:botpass@localhost:5432/smartmoney?sslmode=disable"
+  max_conns: 10
+  min_conns: 2
+  max_conn_lifetime_minutes: 30
+  auto_migrate: false
+
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+
+telegram:
+  enabled: false
+  token: ""
+  chat_id: 0
+  # Critical 告警是否也走电话/短信通道（预留）
+  critical_escalation: false
+
+# 链参数见 chains.yaml，本文件只声明启用哪些链
+enabled_chains:
+  - base
+  - solana
+
+score:
+  min_win_rate: 0.55
+  min_profit_factor: 1.8
+  max_drawdown: 0.40
+  min_trades: 20
+  score_threshold: 0.70
+  window_days: 90
+  # 评分权重（和必须为 1.0）
+  weight_win_rate: 0.30
+  weight_profit_factor: 0.25
+  weight_drawdown: 0.20
+  weight_consistency: 0.15
+  weight_recency: 0.10
+
+signal:
+  # 成交量/流动性突增阈值（相对滚动均值倍数）
+  volume_spike_multiple: 6.0
+  liquidity_spike_multiple: 5.0
+  # 信号有效期（分钟）：超时未确认自动衰减/取消
+  ttl_minutes: 30
+  # 跟风确认窗口（分钟）
+  follow_confirm_window_minutes: 30
+  # 大额买入判定：相对地址历史买入中位数的倍数
+  large_buy_multiple: 2.0
+  # 同一代币信号冷却（分钟）
+  cooldown_minutes: 20
+
+risk:
+  max_position_pct: 0.08          # 单币仓位 ≤ 8% 总资金
+  max_open_positions: 4           # 同时持仓上限
+  stop_loss_pct: 0.25             # 硬止损 25%
+  trailing_stop_pct: 0.20         # 移动止盈回撤 20%
+  liquidity_drop_trigger_pct: 0.35 # 流动性骤降 35% 触发止损
+  daily_loss_limit_pct: 0.15      # 日亏损 15% → 强制冷却
+  cooldown_after_loss_minutes: 120
+  max_slippage_bps: 150           # 最大可接受滑点 1.5%
+  max_follow_delay_seconds: 90    # 跟单延迟上限
+  split_entries: 3                # 分批建仓笔数
+  dry_run_default: true
+
+alert:
+  dedup_window_minutes: 5
+  # 静默时段只保留 critical（24h 制，空表示不静默）
+  quiet_hours: []
+  # 抑制规则：已止损代币在 N 分钟内不再发价格波动告警
+  suppress_after_stop_loss_minutes: 60
+
+agent:
+  enabled: false
+  provider: openai          # openai | anthropic | local
+  model: gpt-4o-mini
+  base_url: ""
+  max_steps: 12
+  timeout_seconds: 60
+  # 单次操作金额上限（USD），Agent 沙箱硬限制
+  max_action_usd: 200
+  require_human_confirm: true
+
+metrics:
+  enabled: true
+  path: /metrics
+
+auth:
+  jwt_ttl_hours: 168

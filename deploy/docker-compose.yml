@@ -1,0 +1,80 @@
+# meme-bot 本地基础设施：PostgreSQL + Redis（+ 可选 Prometheus）
+# 用法：cd deploy && docker compose up -d
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: memebot-postgres
+    environment:
+      POSTGRES_USER: bot
+      POSTGRES_PASSWORD: botpass
+      POSTGRES_DB: smartmoney
+      TZ: UTC
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bot -d smartmoney"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: memebot-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  bot:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: memebot-bot
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ../.env
+    environment:
+      MEMEBOT_DATABASE_DSN: "postgres://bot:botpass@postgres:5432/smartmoney?sslmode=disable"
+      MEMEBOT_REDIS_ADDR: "redis:6379"
+    volumes:
+      - ../configs:/app/configs:ro
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "/app/bot", "-healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    profiles: ["full"]
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: memebot-prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+    profiles: ["full"]
+
+volumes:
+  pgdata:
+  redisdata:

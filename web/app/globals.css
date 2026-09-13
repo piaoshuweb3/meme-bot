@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-surface text-slate-200 antialiased;
+}
+
+.card {
+  @apply rounded-xl border border-slate-800 bg-panel p-4 shadow-sm;
+}
+
+.btn {
+  @apply rounded-lg border border-slate-700 px-3 py-1.5 text-sm hover:border-accent hover:text-white transition;
+}
+
+.badge {
+  @apply rounded-full px-2 py-0.5 text-xs font-medium;
+}

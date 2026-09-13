@@ -1,0 +1,71 @@
+{
+  "@@locale": "en",
+  "appTitle": "meme-bot",
+  "@appTitle": {
+    "description": "Application title"
+  },
+  "navOverview": "Overview",
+  "navSignals": "Signals",
+  "navPositions": "Positions",
+  "commonRefresh": "Refresh",
+  "commonRetry": "Retry",
+  "commonLoading": "Loading…",
+  "commonLanguage": "Language",
+  "commonChain": "Chain",
+  "commonToken": "Token",
+  "commonAmount": "Amount",
+  "commonLiquidity": "Liquidity",
+  "commonStatus": "Status",
+  "commonEntryPrice": "Entry price",
+  "commonCurrentPrice": "Mark price",
+  "commonPnl": "Unrealized PnL",
+  "settingsBaseUrlTitle": "Backend URL",
+  "settingsBaseUrlHint": "http://10.0.2.2:8080",
+  "settingsBaseUrlHelp": "Use 10.0.2.2 for the Android emulator; use your LAN IP on a physical device",
+  "settingsCancel": "Cancel",
+  "settingsSave": "Save",
+  "healthMode": "Mode",
+  "healthChains": "Ready chains",
+  "healthDatabase": "Database",
+  "healthSigner": "Signer",
+  "healthConnected": "Connected",
+  "healthNotConnected": "Not connected",
+  "healthLoaded": "Loaded",
+  "healthNotLoaded": "Not loaded",
+  "healthDatabaseOkHint": "SaaS features available",
+  "healthDatabaseDownHint": "Degraded mode",
+  "healthDryRunHint": "dry_run: no real trades are sent",
+  "healthLiveHint": "live: handle with care",
+  "healthUnavailable": "Cannot reach backend ({base}): {error}",
+  "@healthUnavailable": {
+    "placeholders": {
+      "base": { "type": "String" },
+      "error": { "type": "String" }
+    }
+  },
+  "riskTitle": "Risk control",
+  "riskDescription": "While paused, every order (including agent-initiated ones) is rejected until you resume manually.",
+  "riskPause": "Pause trading",
+  "riskResume": "Resume trading",
+  "riskPauseReason": "Manual pause from mobile app",
+  "signalsTitle": "Signal stream",
+  "signalsEmpty": "No active signals yet.\nA signal must pass the security filter, liquidity floor, large-buy check and cooldown window.",
+  "signalsSource": "Source",
+  "signalsDecay": "Decay",
+  "signalsStatusPending": "Pending",
+  "signalsStatusConfirmed": "Confirmed",
+  "signalsStatusExecuted": "Executed",
+  "signalsStatusExpired": "Expired",
+  "signalsStatusRejected": "Rejected",
+  "signalsLoadFailed": "Failed to load: {error}",
+  "@signalsLoadFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "positionsTitle": "Positions",
+  "positionsEmpty": "No open positions",
+  "loginEmail": "Email",
+  "loginPassword": "Password",
+  "loginSignIn": "Sign in"
+}

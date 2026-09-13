@@ -1,0 +1,35 @@
+name: meme_bot_app
+description: meme-bot 移动端（Dashboard / 信号 / 持仓 / 告警），支持 zh-CN / en-US 双语
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # 官方本地化支持（Material/Widgets/Cupertino 内置文案的翻译）
+  flutter_localizations:
+    sdk: flutter
+  http: ^1.2.2
+  # intl 版本交由 flutter_localizations 约束，避免版本冲突
+  intl: any
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+
+# 国际化说明：
+#  - 文案源：lib/l10n/app_zh.arb、lib/l10n/app_en.arb（标准 ARB，key 与代码一一对应）
+#  - 运行时实现：lib/l10n/app_localizations.dart（手写 delegate，无需代码生成即可编译）
+#  - 如需改用官方生成器：见 l10n.yaml 顶部说明
+#
+# 其它说明：
+#  - 后端地址通过 --dart-define=API_BASE=http://10.0.2.2:8080 注入（Android 模拟器访问宿主机）
+#  - 实时推送（WebSocket）与生物识别二次确认在 Stage 6 接入
