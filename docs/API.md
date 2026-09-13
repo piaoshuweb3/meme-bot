@@ -90,12 +90,37 @@ curl -s localhost:8080/healthz | jq
 { "type": "payment.succeeded", "data": { "order_id": "ord_1_2_1700000000000000000" } }
 ```
 
-处理逻辑（`subscription.HandlePaymentSucceeded`）：
-1. 以 `order_id` 做幂等迁移（`pending → succeeded`），重复回调直接返回 `deduped: true`；
-2. 激活/续费订阅（`+30 天`）；
-3. 触发直推返佣（默认 20%，写入 `commissions`）。
+**签名（必需）**
 
-> 说明：该路由在 `internal/api` 中预留，接入具体支付渠道时在 `SetupRouter` 中注册（需校验签名）。
+| 请求头 | 说明 |
+|--------|------|
+| `X-Webhook-Signature` | `hex(HMAC_SHA256(secret, timestamp + "." + body))`，也兼容 `sha256=<hex>` 前缀 |
+| `X-Webhook-Timestamp` | Unix 秒；与服务器时间偏差需在 `payment.tolerance_seconds`（默认 300s）内，防重放 |
+
+验签使用常量时间比较；`MEMEBOT_PAYMENT_WEBHOOK_SECRET` 未配置时该路由返回 **503**（绝不无签名放行）。
+
+处理逻辑（`subscription.HandlePaymentSucceeded`，幂等）：
+1. 以 `order_id` 做状态迁移（`pending → succeeded`），重复回调直接返回 `deduped: true`；
+2. 激活/续费订阅（`+30 天`）；
+3. 触发直推返佣（默认 20%，写入 `commissions`，同订单+收款人唯一）。
+
+响应示例：
+
+```json
+{ "status": "ok", "order_id": "ord_2_2_…", "user_id": 2, "plan_id": 2,
+  "deduped": false, "period_end": "2026-10-13T14:41:07Z", "commissioned": true }
+```
+
+错误码：`401` 验签失败 / 时间戳超窗；`400` 载荷非法或缺 `order_id`；`404` 订单不存在；`503` 未配置密钥或订阅服务不可用。
+
+调用示例（bash）：
+
+```bash
+TS=$(date +%s)
+BODY='{"type":"payment.succeeded","data":{"order_id":"ord_2_2_xxx"}}'
+SIG=$(printf "%s.%s" "$TS" "$BODY" | openssl dgst -sha256 -hmac "$MEMEBOT_PAYMENT_WEBHOOK_SECRET" -hex | awk '{print $2}')
+curl -X POST localhost:8080/api/v1/payments/webhook \n  -H "Content-Type: application/json" \n  -H "X-Webhook-Timestamp: $TS" -H "X-Webhook-Signature: $SIG" \n  -d "$BODY"
+```
 
 ---
 

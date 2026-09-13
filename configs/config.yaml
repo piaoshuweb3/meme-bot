@@ -99,3 +99,11 @@ metrics:
 
 auth:
   jwt_ttl_hours: 168
+
+payment:
+  # 支付渠道标识（仅用于审计与分发）
+  provider: generic
+  # ⚠️ 验签密钥只从环境变量读取：MEMEBOT_PAYMENT_WEBHOOK_SECRET
+  webhook_secret: ""
+  # 回调时间戳容忍窗口（秒），防重放；0 = 关闭校验
+  tolerance_seconds: 300

@@ -21,6 +21,8 @@ type Deps struct {
 	Users      *user.Service
 	Subs       *subscription.Service
 	Affiliates *affiliate.Service
+	// Payments 支付回调处理器（HMAC 验签 + 时间戳防重放）；为 nil 时不注册回调路由
+	Payments *subscription.WebhookHandler
 
 	// 运行时数据源
 	Signals     func() []*model.Signal
@@ -84,6 +86,11 @@ func SetupRouter(d Deps) *gin.Engine {
 	r.POST("/api/v1/auth/register", registerHandler(d))
 	r.POST("/api/v1/auth/login", loginHandler(d))
 	r.GET("/api/v1/plans", plansHandler(d))
+
+	// 支付渠道回调：不依赖 JWT，改用 HMAC-SHA256 验签 + 时间戳防重放
+	if d.Payments != nil {
+		r.POST("/api/v1/payments/webhook", d.Payments.Handle)
+	}
 
 	// 用户端（JWT）
 	auth := r.Group("/api/v1")

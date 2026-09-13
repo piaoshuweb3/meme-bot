@@ -53,6 +53,7 @@ type Config struct {
 	Chains      map[string]Chain `mapstructure:"chains"`
 	Providers   ProviderConfig   `mapstructure:"providers"`
 	PrivateTx   PrivateTxConfig  `mapstructure:"private_tx"`
+	Payment     PaymentConfig    `mapstructure:"payment"`
 }
 
 // ServerConfig HTTP 服务配置。
@@ -197,6 +198,17 @@ type ProviderConfig struct {
 	MoralisAPIKey     string `mapstructure:"moralis_api_key"`
 	BitqueryAPIKey    string `mapstructure:"bitquery_api_key"`
 	DexScreenerEnable bool   `mapstructure:"dexscreener_enabled"`
+}
+
+// PaymentConfig 支付与回调配置。
+type PaymentConfig struct {
+	// Provider 支付渠道标识（generic / stripe / usdc），用于审计与分发。
+	Provider string `mapstructure:"provider"`
+	// WebhookSecret 回调验签密钥（HMAC-SHA256），只从环境变量读取：MEMEBOT_PAYMENT_WEBHOOK_SECRET。
+	// 为空时回调路由拒绝所有请求（安全默认）。
+	WebhookSecret string `mapstructure:"webhook_secret"`
+	// ToleranceSeconds 时间戳容忍窗口（秒），用于防重放；<=0 表示不校验时间戳。
+	ToleranceSeconds int `mapstructure:"tolerance_seconds"`
 }
 
 // Load 读取配置。paths[0] 为 config.yaml 路径（默认 configs/config.yaml）。
@@ -385,6 +397,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("private_tx.solana_rpc", "")
 
 	v.SetDefault("providers.dexscreener_enabled", true)
+
+	v.SetDefault("payment.provider", "generic")
+	v.SetDefault("payment.tolerance_seconds", 300)
 }
 
 // bindEnv 显式绑定需要环境变量覆盖的键。
@@ -408,6 +423,7 @@ func bindEnv(v *viper.Viper) {
 		"providers.goplus_api_key", "providers.birdeye_api_key",
 		"providers.moralis_api_key", "providers.bitquery_api_key",
 		"providers.dexscreener_enabled",
+		"payment.provider", "payment.webhook_secret", "payment.tolerance_seconds",
 	}
 	for _, k := range keys {
 		_ = v.BindEnv(k)

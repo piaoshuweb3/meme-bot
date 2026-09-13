@@ -179,11 +179,23 @@ func main() {
 		subSvc = subscription.NewService(pool, affSvc, reg)
 	}
 
+	// 支付回调处理器（HMAC 验签 + 防重放）；未配置密钥时回调路由会拒绝所有请求
+	paymentWebhook := subscription.NewWebhookHandler(
+		subSvc,
+		cfg.Payment.WebhookSecret,
+		time.Duration(cfg.Payment.ToleranceSeconds)*time.Second,
+		reg,
+	)
+	if !paymentWebhook.Configured() {
+		log.Warn("支付回调未启用：未配置 MEMEBOT_PAYMENT_WEBHOOK_SECRET（/api/v1/payments/webhook 返回 503）")
+	}
+
 	// ---- HTTP ----
 	router := api.SetupRouter(api.Deps{
 		Users:       userSvc,
 		Subs:        subSvc,
 		Affiliates:  affSvc,
+		Payments:    paymentWebhook,
 		Signals:     engine.Active,
 		Positions:   positions,
 		Addresses:   profiles,

@@ -107,7 +107,7 @@ CI（`.github/workflows/ci.yml`）在每次推送/PR 重复上述检查（后端
 | Flutter 推送/生物识别/安全存储 | 未实现 | 已在 `app/README.md` 标注 |
 | 回测引擎 / Grafana 面板 | 未实现 | Stage 6 |
 | x402 微支付客户端 | 未实现 | 数据库表（`x402_payments`）与迁移已就绪 |
-| 支付渠道对接 | 未实现 | 回调处理逻辑（幂等 + 激活 + 返佣）已完整，缺路由注册与验签 |
+| 支付渠道对接 | ✅ 已打通（待接真实渠道） | `POST /api/v1/payments/webhook` 已注册：HMAC-SHA256 验签 + 时间戳防重放 + 幂等激活 + 返佣；实测首次回调 `commissioned=true`、重放 `deduped=true` |
 
 ### 4.3 环境残留
 
