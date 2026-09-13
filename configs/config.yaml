@@ -10,6 +10,10 @@ server:
   read_timeout_seconds: 15
   write_timeout_seconds: 30
   shutdown_timeout_seconds: 10
+  # 允许跨源访问的来源（Web 面板 / App）；精确匹配，支持 "*"（本项目不使用 Cookie）
+  cors_allowed_origins:
+    - "http://localhost:3000"
+    - "http://127.0.0.1:3000"
 
 database:
   dsn: "postgres://bot:botpass@localhost:5432/smartmoney?sslmode=disable"

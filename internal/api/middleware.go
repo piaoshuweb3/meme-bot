@@ -122,3 +122,48 @@ func itoa(n int) string {
 	}
 	return string(buf[i:])
 }
+
+// CORS 跨源中间件。
+//
+// 为什么必需：Web 面板跑在 :3000、API 跑在 :8080/:8090，属跨源请求；
+// 若响应缺少 Access-Control-Allow-Origin，浏览器会直接拦截（表现为 "Failed to fetch"）。
+//
+// 安全约定：
+//   - 默认使用**精确白名单**（server.cors_allowed_origins），不回显任意 Origin；
+//   - 仅当白名单显式包含 "*" 时才放行任意来源（本项目不使用 Cookie，故不受凭据限制）；
+//   - 预检 OPTIONS 直接返回 204，并声明允许的方法/头部（含鉴权与回调签名头）。
+func CORS(origins []string) gin.HandlerFunc {
+	allowed := make(map[string]bool, len(origins))
+	allowAll := false
+	for _, o := range origins {
+		o = strings.TrimSpace(o)
+		if o == "" {
+			continue
+		}
+		if o == "*" {
+			allowAll = true
+			continue
+		}
+		allowed[strings.ToLower(o)] = true
+	}
+
+	return func(c *gin.Context) {
+		origin := c.GetHeader("Origin")
+		if origin != "" {
+			if allowAll || allowed[strings.ToLower(origin)] {
+				c.Header("Access-Control-Allow-Origin", origin)
+				c.Header("Vary", "Origin")
+				c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+				c.Header("Access-Control-Allow-Headers",
+					"Authorization, Content-Type, Accept, X-API-Key, X-Webhook-Signature, X-Webhook-Timestamp")
+				c.Header("Access-Control-Expose-Headers", "X-RateLimit-Remaining")
+				c.Header("Access-Control-Max-Age", "600")
+			}
+		}
+		if c.Request.Method == http.MethodOptions {
+			c.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+		c.Next()
+	}
+}

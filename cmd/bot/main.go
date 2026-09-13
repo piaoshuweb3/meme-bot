@@ -216,6 +216,7 @@ func main() {
 		JWTSecret:      cfg.Auth.JWTSecret,
 		Mode:           string(cfg.Mode),
 		GinMode:        cfg.Server.GinMode,
+		CORSOrigins:    cfg.Server.CORSAllowedOrigins,
 		Chains:         factory.List(),
 	})
 

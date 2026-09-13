@@ -39,6 +39,8 @@ type Deps struct {
 	Mode      string
 	GinMode   string
 	Chains    []string
+	// CORSOrigins 允许跨源的来源白名单（来自 server.cors_allowed_origins）
+	CORSOrigins []string
 }
 
 // SetupRouter 装配路由。
@@ -51,6 +53,8 @@ func SetupRouter(d Deps) *gin.Engine {
 	}
 
 	r := gin.New()
+	// CORS 必须在最外层：预检与错误响应都要带上跨源头，否则浏览器会把成功响应也判为失败
+	r.Use(CORS(d.CORSOrigins))
 	r.Use(gin.Recovery())
 	if d.Mode != "live" {
 		r.Use(gin.Logger())

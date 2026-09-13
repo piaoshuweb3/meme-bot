@@ -63,6 +63,8 @@ type ServerConfig struct {
 	ReadTimeoutSeconds     int    `mapstructure:"read_timeout_seconds"`
 	WriteTimeoutSeconds    int    `mapstructure:"write_timeout_seconds"`
 	ShutdownTimeoutSeconds int    `mapstructure:"shutdown_timeout_seconds"`
+	// CORSAllowedOrigins 允许跨源访问的来源白名单（Web 面板与 App）；支持 "*"（不带 Cookie 时）。
+	CORSAllowedOrigins []string `mapstructure:"cors_allowed_origins"`
 }
 
 // DatabaseConfig PostgreSQL 配置。
@@ -334,6 +336,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.read_timeout_seconds", 15)
 	v.SetDefault("server.write_timeout_seconds", 30)
 	v.SetDefault("server.shutdown_timeout_seconds", 10)
+	v.SetDefault("server.cors_allowed_origins", []string{"http://localhost:3000", "http://127.0.0.1:3000"})
 
 	v.SetDefault("database.dsn", "postgres://bot:botpass@localhost:5432/smartmoney?sslmode=disable")
 	v.SetDefault("database.max_conns", 10)
