@@ -72,7 +72,12 @@ func (f *fakeAlert) Raise(context.Context, *model.Alert) error {
 	return nil
 }
 
-var testFixedNow = time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC)
+// testFixedNow 取"接近当前时间"的固定值。
+//
+// 冷却窗口与 RollingWindow 内部用 time.Now() 判断新鲜度（实盘语义），
+// 若此处注入远古时间，样本会被判为超窗剔除、冷却会被判为已过期，
+// 测试将失去覆盖意义（此前用固定日期正是踩了这个坑）。
+var testFixedNow = time.Now().UTC().Truncate(time.Second)
 
 func strictFilter() model.SignalFilter {
 	return model.SignalFilter{
