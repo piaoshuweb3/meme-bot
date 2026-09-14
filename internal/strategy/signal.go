@@ -153,7 +153,8 @@ func (e *SignalEngine) Evaluate(ev model.SwapEvent) (*model.Signal, error) {
 	// 4) 冷却窗口
 	e.mu.Lock()
 	if last, ok := e.lastSignal[token]; ok && e.cfg.CooldownMinutes > 0 {
-		if time.Since(last) < time.Duration(e.cfg.CooldownMinutes)*time.Minute {
+		// 用注入时钟判断冷却：回测按事件时间推进，避免 wall clock 让冷却永不过期
+		if e.now().UTC().Sub(last) < time.Duration(e.cfg.CooldownMinutes)*time.Minute {
 			e.mu.Unlock()
 			return nil, nil
 		}
@@ -322,6 +323,7 @@ func (e *SignalEngine) trackBuyer(token, buyer string, at time.Time) {
 
 	// 控制内存增长：超过 500 个代币时清理最旧的
 	if len(e.buyers) > 500 {
+		cutoff := e.now().UTC().Add(-2 * time.Hour)
 		for k, v := range e.buyers {
 			var newest time.Time
 			for _, t := range v {
@@ -329,7 +331,7 @@ func (e *SignalEngine) trackBuyer(token, buyer string, at time.Time) {
 					newest = t
 				}
 			}
-			if time.Since(newest) > 2*time.Hour {
+			if newest.Before(cutoff) {
 				delete(e.buyers, k)
 			}
 		}

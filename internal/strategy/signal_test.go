@@ -434,3 +434,41 @@ func TestMinHelper(t *testing.T) {
 		t.Fatal("min 实现有误")
 	}
 }
+
+func TestEvaluateCooldownFollowsInjectedClock(t *testing.T) {
+	mkt := &fakeMarket{security: goodSecurity(), liq: goodLiquidity()}
+	eng := NewSignalEngine(config.SignalConfig{CooldownMinutes: 30}, strictFilter(), mkt,
+		&fakeScorer{large: true}, &fakeAlert{}, nil, nil)
+	clock := testFixedNow
+	eng.WithClock(func() time.Time { return clock })
+
+	if sig, _ := eng.Evaluate(buyEvent()); sig == nil {
+		t.Fatal("首次应生成信号")
+	}
+	clock = testFixedNow.Add(5 * time.Minute)
+	if sig, _ := eng.Evaluate(buyEvent()); sig != nil {
+		t.Fatalf("冷却窗口内不应重复生成：%+v", sig)
+	}
+	clock = testFixedNow.Add(31 * time.Minute)
+	if sig, _ := eng.Evaluate(buyEvent()); sig == nil {
+		t.Fatal("冷却结束后应可再次生成（回测按事件时间推进，而非 wall clock）")
+	}
+}
+
+func TestVolumeMultipleForFollowsInjectedClock(t *testing.T) {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	w := market.NewRollingWindow(time.Hour, 64).WithClock(func() time.Time { return base.Add(6 * time.Minute) })
+	eng := newEngine(&fakeMarket{security: goodSecurity(), liq: goodLiquidity()}, &fakeScorer{large: true},
+		strictFilter(), config.SignalConfig{}).WithRolling(w)
+
+	liq := &model.LiquidityInfo{Chain: "base", Token: "T", LiquidityUSD: 1000, Volume24hUSD: 100}
+	for i := 0; i < 3; i++ {
+		if got := eng.volumeMultipleFor(liq, "base", "T", base.Add(time.Duration(i)*time.Minute)); got != 0 {
+			t.Fatalf("样本不足时应返回 0：%v", got)
+		}
+	}
+	spike := &model.LiquidityInfo{Chain: "base", Token: "T", LiquidityUSD: 1000, Volume24hUSD: 600}
+	if got := eng.volumeMultipleFor(spike, "base", "T", base.Add(5*time.Minute)); got != 6 {
+		t.Fatalf("回测语义下应算出倍数 6（修复前恒为 0）：%v", got)
+	}
+}

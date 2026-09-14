@@ -70,3 +70,33 @@ func TestRollingWindowEviction(t *testing.T) {
 		t.Fatalf("非法观测应被忽略，实际 %d", n)
 	}
 }
+
+func TestRollingWindowHonorsInjectedClock(t *testing.T) {
+	// 远古事件时间 + 注入时钟：样本必须保留（回测语义）。
+	// 修复前 Mean 用 wall clock，会把历史样本全部判为超窗剔除，倍数恒为 0。
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	w := NewRollingWindow(time.Hour, 64).WithClock(func() time.Time { return base.Add(10 * time.Minute) })
+	for i := 0; i < 3; i++ {
+		w.Observe("k", 100, base.Add(time.Duration(i)*time.Minute))
+	}
+
+	mean, count := w.Mean("k")
+	if count != 3 || mean != 100 {
+		t.Fatalf("注入时钟下不应剔除历史样本：mean=%v count=%d", mean, count)
+	}
+	if got := w.Multiple("k", 600, 3); got != 6 {
+		t.Fatalf("回测语义下应算出倍数 6：%v", got)
+	}
+
+	// 时钟推进到窗口之外 → 样本应被剔除
+	w.WithClock(func() time.Time { return base.Add(3 * time.Hour) })
+	if _, n := w.Mean("k"); n != 0 {
+		t.Fatalf("超出窗口后应剔除样本：%d", n)
+	}
+
+	// WithClock(nil) 不应清空时钟
+	w.WithClock(nil)
+	if w.clock == nil {
+		t.Fatal("WithClock(nil) 不应清空时钟")
+	}
+}

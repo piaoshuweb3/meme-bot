@@ -23,6 +23,11 @@ type RollingWindow struct {
 	window   time.Duration
 	capacity int
 	samples  map[string][]sample
+
+	// clock 判定样本新鲜度所用的时钟。
+	// 必须在回测中注入事件时钟：若沿用 wall clock，历史样本会被判为"超窗"全部剔除，
+	// 导致突增倍数恒为 0（回测结论失真）。应在启动阶段注入，之后不再变更。
+	clock func() time.Time
 }
 
 // NewRollingWindow 构建滚动窗口；window <= 0 默认 1 小时，capacity <= 0 默认 720。
@@ -33,7 +38,29 @@ func NewRollingWindow(window time.Duration, capacity int) *RollingWindow {
 	if capacity <= 0 {
 		capacity = 720
 	}
-	return &RollingWindow{window: window, capacity: capacity, samples: make(map[string][]sample)}
+	return &RollingWindow{
+		window:   window,
+		capacity: capacity,
+		samples:  make(map[string][]sample),
+		clock:    time.Now,
+	}
+}
+
+// WithClock 注入时钟（回测场景：用事件时间判断样本新鲜度）。
+// 传 nil 表示保持不变。
+func (w *RollingWindow) WithClock(now func() time.Time) *RollingWindow {
+	if now != nil {
+		w.clock = now
+	}
+	return w
+}
+
+// now 当前时间（带 UTC 归一与 nil 兜底）。
+func (w *RollingWindow) now() time.Time {
+	if w.clock == nil {
+		return time.Now().UTC()
+	}
+	return w.clock().UTC()
 }
 
 // Observe 记录一次观测（at 为零时使用当前时间）。
@@ -42,7 +69,7 @@ func (w *RollingWindow) Observe(key string, value float64, at time.Time) {
 		return
 	}
 	if at.IsZero() {
-		at = time.Now().UTC()
+		at = w.now()
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -57,7 +84,7 @@ func (w *RollingWindow) Mean(key string) (mean float64, count int) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	list := trim(w.samples[key], time.Now().UTC().Add(-w.window), w.capacity)
+	list := trim(w.samples[key], w.now().Add(-w.window), w.capacity)
 	w.samples[key] = list
 	if len(list) == 0 {
 		return 0, 0
