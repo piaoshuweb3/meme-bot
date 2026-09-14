@@ -124,6 +124,11 @@ func (e *SignalEngine) Evaluate(ev model.SwapEvent) (*model.Signal, error) {
 		e.recordFiltered(token, reason)
 		return nil, nil
 	}
+	// securityPass 在关闭保守拒绝时会放行 nil 报告；此处补占位报告，
+	// 否则下方 `Security: *security` 将解引用空指针并导致进程 panic（已由单测覆盖）。
+	if security == nil {
+		security = &model.SecurityReport{Chain: ev.Chain, Token: token, Source: "unavailable"}
+	}
 
 	// 2) 流动性门槛
 	liquidity, err := e.market.Liquidity(ctx, ev.Chain, token)
