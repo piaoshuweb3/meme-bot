@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"meme-bot/internal/config"
@@ -33,28 +34,37 @@ func main() {
 	client := &http.Client{Timeout: *timeout}
 	failed, checked := 0, 0
 
-	check := func(name, endpoint string) {
+	// probe 自动识别链类型：先按 EVM 测（eth_chainId），失败则按 Solana 测（getSlot）。
+	probe := func(endpoint string) {
 		checked++
-		chainID, err := rpcCall(context.Background(), client, endpoint, "eth_chainId", nil)
-		if err != nil {
-			failed++
-			fmt.Println("  FAIL", config.MaskURL(endpoint), "->", err)
+		masked := config.MaskURL(endpoint)
+
+		if chainID, err := rpcCall(context.Background(), client, endpoint, "eth_chainId", nil); err == nil {
+			start := time.Now()
+			head, herr := rpcCall(context.Background(), client, endpoint, "eth_blockNumber", nil)
+			elapsed := time.Since(start).Round(time.Millisecond)
+			if herr != nil {
+				failed++
+				fmt.Println("  FAIL", masked, "->", herr)
+				return
+			}
+			fmt.Println("  OK   EVM   ", masked, "chainId=", chainID, "head=", head, "latency=", elapsed)
 			return
 		}
-		start := time.Now()
-		head, err := rpcCall(context.Background(), client, endpoint, "eth_blockNumber", nil)
-		elapsed := time.Since(start).Round(time.Millisecond)
+
+		slot, err := rpcCall(context.Background(), client, endpoint, "getSlot", nil)
 		if err != nil {
 			failed++
-			fmt.Println("  FAIL", config.MaskURL(endpoint), "->", err)
+			fmt.Println("  FAIL", masked, "-> 既非 EVM 也非 Solana:", err)
 			return
 		}
-		fmt.Println("  OK  ", config.MaskURL(endpoint), "chainId=", chainID, "head=", head, "latency=", elapsed)
+		health, _ := rpcCall(context.Background(), client, endpoint, "getHealth", nil)
+		fmt.Println("  OK   Solana", masked, "slot=", slot, "health=", health)
 	}
 
 	if *url != "" {
 		fmt.Println("直接测试：")
-		check("url", *url)
+		probe(*url)
 		fmt.Println("共检查", checked, "个端点，失败", failed, "个")
 		if failed > 0 {
 			os.Exit(2)
@@ -84,7 +94,7 @@ func main() {
 		}
 		fmt.Println(name, "(evm_chain_id=", ch.EVMChainID, ")")
 		for _, endpoint := range ch.RPCURLs {
-			check(name, endpoint)
+			probe(endpoint)
 		}
 	}
 	fmt.Println("共检查", checked, "个端点，失败", failed, "个")
@@ -113,7 +123,7 @@ func rpcCall(ctx context.Context, client *http.Client, endpoint, method string, 
 		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 	var out struct {
-		Result string `json:"result"`
+		Result json.RawMessage `json:"result"`
 		Error  *struct {
 			Message string `json:"message"`
 		} `json:"error"`
@@ -124,5 +134,17 @@ func rpcCall(ctx context.Context, client *http.Client, endpoint, method string, 
 	if out.Error != nil {
 		return "", fmt.Errorf("RPC: %s", out.Error.Message)
 	}
-	return out.Result, nil
+
+	// result 类型随方法而异：EVM 返回字符串（"0x…"），Solana 的 getSlot 返回数字。
+	raw := strings.TrimSpace(string(out.Result))
+	if raw == "" || raw == "null" {
+		return "", nil
+	}
+	if strings.HasPrefix(raw, "\"") {
+		var asString string
+		if err := json.Unmarshal(out.Result, &asString); err == nil {
+			return asString, nil
+		}
+	}
+	return raw, nil
 }
