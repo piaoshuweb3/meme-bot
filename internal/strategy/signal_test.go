@@ -3,6 +3,7 @@ package strategy
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -470,5 +471,36 @@ func TestVolumeMultipleForFollowsInjectedClock(t *testing.T) {
 	spike := &model.LiquidityInfo{Chain: "base", Token: "T", LiquidityUSD: 1000, Volume24hUSD: 600}
 	if got := eng.volumeMultipleFor(spike, "base", "T", base.Add(5*time.Minute)); got != 6 {
 		t.Fatalf("回测语义下应算出倍数 6（修复前恒为 0）：%v", got)
+	}
+}
+
+func TestSecurityPassNoSellPath(t *testing.T) {
+	eng := &SignalEngine{filter: strictFilter()}
+
+	// 证据不足（nil）：不得拒绝——unknown 不等于不可卖，否则会误杀刚上线的新币
+	unknown := goodSecurity()
+	if pass, reason := eng.securityPass(unknown); !pass {
+		t.Fatalf("证据不足应放行：%s", reason)
+	}
+
+	// 确证不可卖（false）：必须拒绝，且原因须带上实证依据
+	no := goodSecurity()
+	f := false
+	no.Sellable = &f
+	no.SellEvidence = "仅有 7 笔买入、0 笔卖出"
+	pass, reason := eng.securityPass(no)
+	if pass {
+		t.Fatal("实证不可卖必须被拒绝")
+	}
+	if !strings.Contains(reason, "实证不可卖") {
+		t.Fatalf("拒绝原因应说明实证依据：%s", reason)
+	}
+
+	// 确证可卖（true）：放行
+	yes := goodSecurity()
+	tr := true
+	yes.Sellable = &tr
+	if pass, reason := eng.securityPass(yes); !pass {
+		t.Fatalf("已确证可卖应放行：%s", reason)
 	}
 }

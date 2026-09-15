@@ -100,6 +100,10 @@ func main() {
 	// ---- 数据源 ----
 	market := provider.NewMarket()
 	security := provider.NewSecurity(cfg.Providers.GoPlusAPIKey, market)
+	// 实证可卖性：注入链上探针（RPC 缺失时该能力自动降级为『未检测』，不影响静态报告）
+	if ch, ok := cfg.Chain("base"); ok && len(ch.RPCURLs) > 0 {
+		security = security.WithSellabilityCounter(provider.NewEVMTransferCounter("sellability-base", ch.RPCURLs))
+	}
 	newTokens := provider.NewNewTokenFeed(market)
 	smartMoney := provider.NewSmartMoney("", "")
 

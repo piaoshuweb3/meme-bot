@@ -48,6 +48,9 @@ type MarketSource interface {
 type SecuritySource interface {
 	Security(ctx context.Context, chainID, token string) (*model.SecurityReport, error)
 	Concentration(ctx context.Context, chainID, token string, topN int) (*model.Concentration, error)
+	// Sellability 实证可卖性：(是否可卖, 依据, err)；nil 表示未检测/证据不足。
+	// 刻意使用基本类型而非 provider 的报表类型，避免 base 反向依赖 provider。
+	Sellability(ctx context.Context, chainID, token, pool string) (*bool, string, error)
 }
 
 // Deps 适配器依赖（可为 nil，对应能力会明确报错而不是静默返回假数据）。
@@ -394,7 +397,41 @@ func (a *Adapter) TokenSecurity(ctx context.Context, token string) (*model.Secur
 	if a.deps.Security == nil {
 		return nil, errors.New("base: security source not configured")
 	}
-	return a.deps.Security.Security(ctx, a.ChainID(), token)
+	rep, err := a.deps.Security.Security(ctx, a.ChainID(), token)
+	if err != nil {
+		return nil, err
+	}
+	a.attachSellability(ctx, token, rep)
+	return rep, nil
+}
+
+// attachSellability 附加"实证可卖性"结论。
+//
+// 降级策略：探针失败只记 debug 日志，不影响主流程——静态报告本身已可用，
+// 实证只是增强；但探针失败也绝不写成"可卖"（保持 nil = 未检测）。
+func (a *Adapter) attachSellability(ctx context.Context, token string, rep *model.SecurityReport) {
+	if rep == nil || a.deps.Security == nil {
+		return
+	}
+	pool, err := a.resolvePoolAddress(ctx, token)
+	if err != nil {
+		a.log.Debug("sellability: 池子解析失败", zap.String("token", token), zap.Error(err))
+		return
+	}
+	sellable, evidence, err := a.deps.Security.Sellability(ctx, a.ChainID(), token, pool.Hex())
+	if err != nil {
+		a.log.Debug("sellability: 探针失败（不影响静态报告）", zap.String("token", token), zap.Error(err))
+		return
+	}
+	if sellable == nil {
+		return
+	}
+	rep.Sellable = sellable
+	rep.SellEvidence = evidence
+	if !*sellable {
+		// "有买入样本却零卖出"属强风险信号，直接计入 Risky 供策略层裁决
+		rep.Risky = true
+	}
 }
 
 // HolderConcentration 实现 model.ChainAdapter。

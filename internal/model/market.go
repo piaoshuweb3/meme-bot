@@ -111,6 +111,12 @@ type SecurityReport struct {
 	CheckedAt          time.Time `json:"checked_at"`
 	// 判定结论：危险镜像/可疑字段，由策略层统一阈值裁决
 	Risky bool `json:"risky"`
+
+	// Sellable 实证可卖性：nil = 未检测或证据不足（≠ false）。
+	// 只有确证"有真实卖出"才是 true，确证"有买入样本却零卖出"才是 false。
+	Sellable *bool `json:"sellable,omitempty"`
+	// SellEvidence 实证依据（人类可读，供日志与前端展示）
+	SellEvidence string `json:"sell_evidence,omitempty"`
 }
 
 // Concentration 持仓集中度。

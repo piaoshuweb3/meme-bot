@@ -23,6 +23,45 @@ type Security struct {
 	goplusKey  string
 	goplusBase string
 	market     *Market
+	// sellCounter 实证可卖性探针；为 nil 时该能力明确返回"未检测"（nil ≠ false）
+	sellCounter SellabilityProbe
+}
+
+// WithSellabilityCounter 注入探针以启用实证可卖性（可选能力）。
+func (s *Security) WithSellabilityCounter(c SellabilityProbe) *Security {
+	if s != nil {
+		s.sellCounter = c
+	}
+	return s
+}
+
+// Sellability 实现链适配器的 SecuritySource：返回实证可卖性。
+//
+// 返回值语义（关键）：
+//   - nil  → 未检测或证据不足（unknown），调用方不得据此放行或拒绝；
+//   - true → 链上存在真实卖出；
+//   - false→ 有足够买入样本却零卖出（强风险信号）。
+func (s *Security) Sellability(ctx context.Context, chainID, token, pool string) (*bool, string, error) {
+	if s == nil || s.sellCounter == nil || token == "" || pool == "" {
+		return nil, "", nil
+	}
+	rep, err := s.sellCounter.Assess(ctx, chainID, token, pool, DefaultSellLookbackBlocks)
+	if err != nil {
+		return nil, "", err
+	}
+	if rep == nil {
+		return nil, "", nil
+	}
+	switch rep.Verdict {
+	case VerdictSellable:
+		v := true
+		return &v, rep.Evidence, nil
+	case VerdictNoSellPath:
+		v := false
+		return &v, rep.Evidence, nil
+	default:
+		return nil, rep.Evidence, nil
+	}
 }
 
 // NewSecurity 构建安全服务（默认 GoPlus 公共端点）。

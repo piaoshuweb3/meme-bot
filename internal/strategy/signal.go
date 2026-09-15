@@ -315,6 +315,21 @@ var securityRules = []securityRule{
 		Reason:   func(_ model.SignalFilter, _ *model.SecurityReport) string { return "合约未开源" },
 	},
 	{
+		// 无开关：该条件本身已排除"证据不足"（unknown→nil 不触发），
+		// 只在确证"有买入样本却零卖出"时拒绝，属强风险信号。
+		Name:    "no_sell_path",
+		Enabled: func(model.SignalFilter) bool { return true },
+		Violated: func(_ model.SignalFilter, rep *model.SecurityReport) bool {
+			return rep.Sellable != nil && !*rep.Sellable
+		},
+		Reason: func(_ model.SignalFilter, rep *model.SecurityReport) string {
+			if rep.SellEvidence != "" {
+				return "实证不可卖：" + rep.SellEvidence
+			}
+			return "实证不可卖（链上无卖出记录）"
+		},
+	},
+	{
 		Name:     "buy_tax",
 		Enabled:  func(f model.SignalFilter) bool { return f.MaxBuyTax > 0 },
 		Violated: func(f model.SignalFilter, rep *model.SecurityReport) bool { return rep.BuyTax > f.MaxBuyTax },
