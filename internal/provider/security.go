@@ -25,15 +25,25 @@ type Security struct {
 	market     *Market
 }
 
-// NewSecurity 构建安全服务。
+// NewSecurity 构建安全服务（默认 GoPlus 公共端点）。
 func NewSecurity(goplusAPIKey string, market *Market) *Security {
-	return &Security{
+	return NewSecurityWithBaseURL(goplusAPIKey, market, "")
+}
+
+// NewSecurityWithBaseURL 覆盖 GoPlus API 基址（自建网关/代理/测试注入）。
+// 传空串表示使用默认端点。
+func NewSecurityWithBaseURL(goplusAPIKey string, market *Market, baseURL string) *Security {
+	s := &Security{
 		http:       &http.Client{Timeout: 12 * time.Second},
 		cache:      newCache(5 * time.Minute),
 		goplusKey:  strings.TrimSpace(goplusAPIKey),
 		goplusBase: "https://api.gopluslabs.io/api/v1/token_security",
 		market:     market,
 	}
+	if v := strings.TrimRight(strings.TrimSpace(baseURL), "/"); v != "" {
+		s.goplusBase = v
+	}
+	return s
 }
 
 // Security 实现 SecuritySource。

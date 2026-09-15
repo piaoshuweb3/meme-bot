@@ -17,13 +17,23 @@ type Market struct {
 	baseURL string
 }
 
-// NewMarket 构建行情服务。
-func NewMarket() *Market {
-	return &Market{
+// NewMarket 构建行情服务（默认 DexScreener 公共端点）。
+func NewMarket() *Market { return NewMarketWithBaseURL("") }
+
+// NewMarketWithBaseURL 覆盖行情 API 基址。
+//
+// 用途：① 自建网关/代理（公共端点在国内常被限流）；② 单元测试注入 httptest 服务；
+// ③ 回测时指向录制的行情回放服务。传空串表示使用默认端点。
+func NewMarketWithBaseURL(baseURL string) *Market {
+	m := &Market{
 		http:    &http.Client{Timeout: 12 * time.Second},
 		cache:   newCache(30 * time.Second),
 		baseURL: "https://api.dexscreener.com/latest/dex",
 	}
+	if v := strings.TrimRight(strings.TrimSpace(baseURL), "/"); v != "" {
+		m.baseURL = v
+	}
+	return m
 }
 
 type dexPair struct {
