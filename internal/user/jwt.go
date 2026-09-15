@@ -42,8 +42,11 @@ func SignToken(secret string, claims Claims, ttl time.Duration) (string, error) 
 		claims.Iat = now.Unix()
 	}
 	if claims.Exp == 0 {
+		// 非正 TTL 必须显式失败：静默改为默认值会让"配置错误/计算失误"变成
+		// 生命周期失控的令牌（且无声），属于安全边界，宁可 fail-fast。
+		// 需要构造过期令牌用于测试时，请显式设置 claims.Exp。
 		if ttl <= 0 {
-			ttl = 7 * 24 * time.Hour
+			return "", fmt.Errorf("user: token ttl must be positive, got %s", ttl)
 		}
 		claims.Exp = now.Add(ttl).Unix()
 	}
