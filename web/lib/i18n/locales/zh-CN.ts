@@ -38,6 +38,8 @@ export const zhCN = {
     riskHighTax: "买卖税率偏高",
     riskOwnershipNotRenounced: "权限未放弃",
     riskSafe: "未发现已知风险特征",
+    riskNoSellPath: "实证不可卖（链上只有买入、零卖出）",
+    riskDataConflict: "多池价格数据冲突",
     rSellPercent: "卖出比例",
     rSell: "卖出",
     custom: "自定义",

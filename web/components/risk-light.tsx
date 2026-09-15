@@ -44,6 +44,16 @@ export function assessRisk(sec?: SecuritySummary): { level: RiskLevel; reasons: 
     reasons.push("riskHighTax");
     bump("medium");
   }
+  // 实证不可卖（链上只有买入、零卖出）：强风险信号 → 红灯
+  if (sec.sellable === false) {
+    reasons.push("riskNoSellPath");
+    bump("high");
+  }
+  // 多池数据冲突：数据可疑但未必是风险 → 黄灯，交人工复核
+  if (sec.data_conflict) {
+    reasons.push("riskDataConflict");
+    bump("medium");
+  }
   // 后端综合判定为 risky 但未命中上述明细时，至少给到黄色预警
   if (sec.risky && level === "low") bump("medium");
   return { level, reasons };

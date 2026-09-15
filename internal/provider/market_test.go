@@ -132,3 +132,59 @@ func TestProviderConstructorsHonorEmptyBaseURL(t *testing.T) {
 		t.Fatalf("默认 GoPlus 端点错误：%q", s.goplusBase)
 	}
 }
+
+func TestClassifyPairConsistency(t *testing.T) {
+	mk := func(pool, price string, liq float64) dexPair {
+		var dp dexPair
+		dp.PairAddress = pool
+		dp.PriceUSD = price
+		dp.Liquidity.USD = liq
+		return dp
+	}
+
+	// 多池价格接近 → 一致
+	if ok, detail := ClassifyPairConsistency([]dexPair{
+		mk("0xaaaa", "1.00", 100000),
+		mk("0xbbbb", "1.02", 80000),
+	}, 0.1, 0.2); !ok {
+		t.Fatalf("价格接近应判一致：%s", detail)
+	}
+
+	// 大池之间严重偏离 → 冲突，且依据须含偏离幅度与阈值
+	ok, detail := ClassifyPairConsistency([]dexPair{
+		mk("0xaaaa", "1.00", 100000),
+		mk("0xbbbb", "2.00", 90000),
+	}, 0.1, 0.2)
+	if ok {
+		t.Fatalf("偏离 100%% 应判冲突：%s", detail)
+	}
+	if !strings.Contains(detail, "偏离") || !strings.Contains(detail, "阈值") {
+		t.Fatalf("依据应说明偏离与阈值：%s", detail)
+	}
+
+	// 小池偏离必须被忽略 —— 这是本检查不误报的核心（否则正常代币会被误杀）
+	if ok, _ := ClassifyPairConsistency([]dexPair{
+		mk("0xaaaa", "1.00", 100000),
+		mk("0xsmall", "5.00", 500), // 流动性为基准的 0.5%，低于 10% 阈值
+	}, 0.1, 0.2); !ok {
+		t.Fatal("小池噪声不应判为冲突")
+	}
+
+	// 单池 → 一致（无法交叉校验，而不是有问题）
+	if ok, detail := ClassifyPairConsistency([]dexPair{mk("0xaaaa", "1.00", 100000)}, 0.1, 0.2); !ok {
+		t.Fatalf("单池应判一致：%s", detail)
+	}
+
+	// 非法价格与零流动性 → 忽略
+	if ok, _ := ClassifyPairConsistency([]dexPair{
+		mk("0xaaaa", "abc", 100000),
+		mk("0xbbbb", "1.00", 0),
+	}, 0.1, 0.2); !ok {
+		t.Fatal("非法价格与零流动性应被忽略")
+	}
+
+	// 空集
+	if ok, _ := ClassifyPairConsistency(nil, 0, 0); !ok {
+		t.Fatal("空集应判一致")
+	}
+}

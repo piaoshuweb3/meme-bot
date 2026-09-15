@@ -117,6 +117,11 @@ type SecurityReport struct {
 	Sellable *bool `json:"sellable,omitempty"`
 	// SellEvidence 实证依据（人类可读，供日志与前端展示）
 	SellEvidence string `json:"sell_evidence,omitempty"`
+
+	// DataConflict 多源/多池数据冲突（同代币各池价格严重偏离等）
+	DataConflict bool `json:"data_conflict,omitempty"`
+	// ConflictDetail 冲突细节（人类可读）
+	ConflictDetail string `json:"conflict_detail,omitempty"`
 }
 
 // Concentration 持仓集中度。

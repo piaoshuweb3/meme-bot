@@ -39,6 +39,8 @@ export const enUS: Messages = {
     riskHighTax: "High buy/sell tax",
     riskOwnershipNotRenounced: "Ownership not renounced",
     riskSafe: "No known risk flags",
+    riskNoSellPath: "Not sellable (buys only, zero sells on-chain)",
+    riskDataConflict: "Data conflict across pools",
     rSellPercent: "Sell percent",
     rSell: "Sell",
     custom: "Custom",

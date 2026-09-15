@@ -42,6 +42,8 @@ const etherscanBaseURL = "https://basescan.org"
 type MarketSource interface {
 	PriceUSD(ctx context.Context, chainID, token string) (price float64, source string, err error)
 	LiquidityUSD(ctx context.Context, chainID, token string) (liquidityUSD, volume24hUSD float64, pool string, err error)
+	// PairConsistency 多池价格一致性交叉校验：(是否一致, 依据, err)。
+	PairConsistency(ctx context.Context, chainID, token string) (consistent bool, detail string, err error)
 }
 
 // SecuritySource 安全与持仓数据源。
@@ -431,6 +433,16 @@ func (a *Adapter) attachSellability(ctx context.Context, token string, rep *mode
 	if !*sellable {
 		// "有买入样本却零卖出"属强风险信号，直接计入 Risky 供策略层裁决
 		rep.Risky = true
+	}
+
+	// 多源交叉校验：同代币多池价格严重偏离 → 数据可疑。
+	// 只标记不硬拦（可能是异常池而非真风险），交策略层与人工复核。
+	if a.deps.Market != nil {
+		if consistent, detail, cerr := a.deps.Market.PairConsistency(ctx, a.ChainID(), token); cerr == nil && !consistent {
+			rep.DataConflict = true
+			rep.ConflictDetail = detail
+			rep.Risky = true
+		}
 	}
 }
 

@@ -46,6 +46,12 @@ export type SecuritySummary = {
   buy_tax?: number;
   sell_tax?: number;
   source?: string;
+  /** 实证可卖性：undefined = 未检测/证据不足（≠ 不可卖） */
+  sellable?: boolean;
+  sell_evidence?: string;
+  /** 多源/多池数据冲突 */
+  data_conflict?: boolean;
+  conflict_detail?: string;
 };
 
 export type Signal = {
