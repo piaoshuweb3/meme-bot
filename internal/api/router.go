@@ -3,6 +3,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"meme-bot/internal/affiliate"
 	"meme-bot/internal/model"
+	"meme-bot/internal/outcome"
 	"meme-bot/internal/subscription"
 	"meme-bot/internal/user"
 )
@@ -43,6 +45,9 @@ type Deps struct {
 	CORSOrigins []string
 	// WS 是已装配好的 WebSocket 处理器（GET /ws）；为 nil 时不注册实时推送端点
 	WS gin.HandlerFunc
+
+	// Outcomes 影子表现跟踪存储；为 nil 或不可用时该端点返回 503（不返回假数据）
+	Outcomes *outcome.PGStore
 }
 
 // SetupRouter 装配路由。
@@ -113,6 +118,7 @@ func SetupRouter(d Deps) *gin.Engine {
 		auth.GET("/positions", listPositionsHandler(d))
 		auth.GET("/subscription", subscriptionHandler(d))
 		auth.POST("/subscription/checkout", checkoutHandler(d))
+		auth.GET("/outcomes/coverage", outcomeCoverageHandler(d))
 		auth.POST("/affiliate/bind", bindReferralHandler(d))
 		auth.GET("/affiliate/stats", affiliateStatsHandler(d))
 		auth.POST("/system/pause", pauseHandler(d))
@@ -310,6 +316,58 @@ func externalScoreHandler(d Deps) gin.HandlerFunc {
 			"win_rate": p.WinRate, "profit_factor": p.ProfitFactor, "max_drawdown": p.MaxDrawdown,
 			"total_trades": p.TotalTrades, "tags": p.Tags, "blacklisted": p.IsBlacklisted,
 			"updated_at": p.UpdatedAt,
+		})
+	}
+}
+
+// outcomeCoverageHandler 返回影子表现的覆盖与对照统计。
+//
+// 用途：回答"我被拒绝的那批候选，后来涨了还是跌了"——用于验证过滤器本身是否有效。
+// 语义提醒：样本不足时统计为 null（不是 0），前端必须依据 calibratable 决定能否下结论。
+func outcomeCoverageHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.Outcomes == nil || !d.Outcomes.Available() {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "影子跟踪存储不可用"})
+			return
+		}
+
+		hours := 24
+		if v := strings.TrimSpace(c.Query("hours")); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 24*30 {
+				hours = n
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+		defer cancel()
+
+		now := time.Now().UTC()
+		since := now.Add(-time.Duration(hours) * time.Hour)
+		records, err := d.Outcomes.ListSince(ctx, since, 5000)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		cov := outcome.Coverage(records, outcome.DefaultHorizons, now)
+
+		type row struct {
+			Decision string `json:"decision"`
+			outcome.Stat
+		}
+		stats := make([]row, 0, len(cov)*len(outcome.DefaultHorizons))
+		for _, dec := range []outcome.Decision{outcome.DecisionFiltered, outcome.DecisionSignaled, outcome.DecisionExecuted} {
+			for _, st := range cov[dec] {
+				stats = append(stats, row{Decision: string(dec), Stat: st})
+			}
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"hours":                       hours,
+			"since":                       since,
+			"records":                     len(records),
+			"min_samples_for_calibration": outcome.MinSamplesForCalibration,
+			"stats":                       stats,
 		})
 	}
 }

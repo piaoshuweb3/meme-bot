@@ -38,6 +38,7 @@ import (
 	"meme-bot/internal/logger"
 	"meme-bot/internal/metrics"
 	"meme-bot/internal/model"
+	"meme-bot/internal/outcome"
 	"meme-bot/internal/payment"
 	"meme-bot/internal/provider"
 	"meme-bot/internal/risk"
@@ -208,6 +209,7 @@ func main() {
 		Subs:        subSvc,
 		Affiliates:  affSvc,
 		Payments:    paymentWebhook,
+		Outcomes:    outcome.NewPGStore(pool),
 		Signals:     engine.Active,
 		Positions:   positions,
 		Addresses:   profiles,
