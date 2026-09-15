@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 
+import { BottomNav } from "@/components/bottom-nav";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
+import { TopStatusBar } from "@/components/top-status-bar";
 import { I18nProvider } from "@/lib/i18n";
 
 import "./globals.css";
@@ -33,10 +35,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             Skip to main content
           </a>
           <SiteHeader />
-          <main id="main" className="mx-auto max-w-6xl px-6 py-8">
+          <TopStatusBar />
+          {/* pb-20：为移动端底部导航留出空间，避免内容被遮挡 */}
+          <main id="main" className="mx-auto max-w-6xl px-6 py-8 pb-20 md:pb-8">
             {children}
           </main>
           <SiteFooter />
+          <BottomNav />
         </I18nProvider>
       </body>
     </html>

@@ -14,6 +14,19 @@ export type Health = {
   alerts?: Record<string, string>;
 };
 
+/** 合约安全摘要（后端 Signal.security 字段，用于风险红黄绿灯）。 */
+export type SecuritySummary = {
+  risky?: boolean;
+  is_honeypot?: boolean;
+  has_mint?: boolean;
+  has_blacklist?: boolean;
+  is_open_source?: boolean;
+  ownership_renounced?: boolean;
+  buy_tax?: number;
+  sell_tax?: number;
+  source?: string;
+};
+
 export type Signal = {
   id: string;
   chain: string;
@@ -27,6 +40,7 @@ export type Signal = {
   created_at: string;
   expires_at: string;
   trigger_address?: string;
+  security?: SecuritySummary;
 };
 
 export type AddressProfile = {
