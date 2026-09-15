@@ -273,6 +273,66 @@ func (e *SignalEngine) Decay(now time.Time) []*model.Signal {
 }
 
 // TrackTrade 记录已成交交易（把地址行为写入画像库，由调用方提供 store）。
+// securityRule 一条安全规则。
+//
+// 为什么用规则表而不是 if 链：安全判定是需要被审计的代码——表驱动让每条规则的
+// 名称、开关来源、命中条件与拒绝原因集中可见，也便于按链定制与逐条单测
+// （参考 nhovongoc0-max/meme-radar 的 EVM_SECURITY_RULES / SOL_SECURITY_RULES）。
+//
+// Violated 同时接收 filter：阈值类规则（税率）必须与配置阈值比较，
+// 早期版本曾写成"税率 > 0 即拒绝"，被 TestSecurityPassMatrix 当场拦下。
+type securityRule struct {
+	Name     string
+	Enabled  func(f model.SignalFilter) bool
+	Violated func(f model.SignalFilter, rep *model.SecurityReport) bool
+	Reason   func(f model.SignalFilter, rep *model.SecurityReport) string
+}
+
+// securityRules 安全过滤规则表（数组顺序即优先级）。
+var securityRules = []securityRule{
+	{
+		Name:     "honeypot",
+		Enabled:  func(f model.SignalFilter) bool { return f.RejectHoneypot },
+		Violated: func(_ model.SignalFilter, rep *model.SecurityReport) bool { return rep.IsHoneypot },
+		Reason:   func(_ model.SignalFilter, _ *model.SecurityReport) string { return "蜜罐合约" },
+	},
+	{
+		Name:     "mintable",
+		Enabled:  func(f model.SignalFilter) bool { return f.RejectMintable },
+		Violated: func(_ model.SignalFilter, rep *model.SecurityReport) bool { return rep.HasMint },
+		Reason:   func(_ model.SignalFilter, _ *model.SecurityReport) string { return "存在增发权限" },
+	},
+	{
+		Name:     "blacklist",
+		Enabled:  func(f model.SignalFilter) bool { return f.RejectWithBlacklist },
+		Violated: func(_ model.SignalFilter, rep *model.SecurityReport) bool { return rep.HasBlacklist },
+		Reason:   func(_ model.SignalFilter, _ *model.SecurityReport) string { return "存在黑名单权限" },
+	},
+	{
+		Name:     "not_open_source",
+		Enabled:  func(f model.SignalFilter) bool { return f.RequireOpenSource },
+		Violated: func(_ model.SignalFilter, rep *model.SecurityReport) bool { return !rep.IsOpenSource },
+		Reason:   func(_ model.SignalFilter, _ *model.SecurityReport) string { return "合约未开源" },
+	},
+	{
+		Name:     "buy_tax",
+		Enabled:  func(f model.SignalFilter) bool { return f.MaxBuyTax > 0 },
+		Violated: func(f model.SignalFilter, rep *model.SecurityReport) bool { return rep.BuyTax > f.MaxBuyTax },
+		Reason: func(_ model.SignalFilter, rep *model.SecurityReport) string {
+			return fmt.Sprintf("买入税过高 %.2f", rep.BuyTax)
+		},
+	},
+	{
+		Name:     "sell_tax",
+		Enabled:  func(f model.SignalFilter) bool { return f.MaxSellTax > 0 },
+		Violated: func(f model.SignalFilter, rep *model.SecurityReport) bool { return rep.SellTax > f.MaxSellTax },
+		Reason: func(_ model.SignalFilter, rep *model.SecurityReport) string {
+			return fmt.Sprintf("卖出税过高 %.2f", rep.SellTax)
+		},
+	},
+}
+
+// securityPass 依次执行规则表；报告缺失时由保守开关决定。
 func (e *SignalEngine) securityPass(rep *model.SecurityReport) (bool, string) {
 	if rep == nil {
 		if e.filter.RejectHoneypot {
@@ -280,23 +340,13 @@ func (e *SignalEngine) securityPass(rep *model.SecurityReport) (bool, string) {
 		}
 		return true, ""
 	}
-	if e.filter.RejectHoneypot && rep.IsHoneypot {
-		return false, "蜜罐合约"
-	}
-	if e.filter.RejectMintable && rep.HasMint {
-		return false, "存在增发权限"
-	}
-	if e.filter.RejectWithBlacklist && rep.HasBlacklist {
-		return false, "存在黑名单权限"
-	}
-	if e.filter.RequireOpenSource && !rep.IsOpenSource {
-		return false, "合约未开源"
-	}
-	if e.filter.MaxBuyTax > 0 && rep.BuyTax > e.filter.MaxBuyTax {
-		return false, fmt.Sprintf("买入税过高 %.2f", rep.BuyTax)
-	}
-	if e.filter.MaxSellTax > 0 && rep.SellTax > e.filter.MaxSellTax {
-		return false, fmt.Sprintf("卖出税过高 %.2f", rep.SellTax)
+	for _, r := range securityRules {
+		if r.Enabled != nil && !r.Enabled(e.filter) {
+			continue
+		}
+		if r.Violated(e.filter, rep) {
+			return false, r.Reason(e.filter, rep)
+		}
 	}
 	return true, ""
 }
