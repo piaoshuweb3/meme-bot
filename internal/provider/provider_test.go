@@ -157,3 +157,40 @@ func TestHTTPGetJSONHonorsCancelledContext(t *testing.T) {
 		t.Fatal("已取消的 ctx 应返回错误（避免上游超时后仍等待）")
 	}
 }
+
+func TestHTTPGetJSONRejectsOversizedResponse(t *testing.T) {
+	// 上游返回超大响应必须显式失败，而不是把它读进内存
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		chunk := make([]byte, 64*1024)
+		for i := range chunk {
+			chunk[i] = 'a'
+		}
+		for i := 0; i < 32; i++ { // 2 MiB > maxResponseBytes
+			if _, err := w.Write(chunk); err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+
+	var out map[string]any
+	err := httpGetJSON(context.Background(), srv.Client(), srv.URL, nil, &out)
+	if err == nil || !strings.Contains(err.Error(), "response too large") {
+		t.Fatalf("超大响应应被拒绝：%v", err)
+	}
+}
+
+func TestHTTPGetJSONAcceptsResponseAtLimit(t *testing.T) {
+	// 恰好接近上限的正常响应仍应可用（避免误伤）
+	payload := `{"pairs":[]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(payload))
+	}))
+	defer srv.Close()
+
+	var out map[string]any
+	if err := httpGetJSON(context.Background(), srv.Client(), srv.URL, nil, &out); err != nil {
+		t.Fatalf("正常小响应不应被限长逻辑误伤：%v", err)
+	}
+}

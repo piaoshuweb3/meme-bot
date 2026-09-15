@@ -50,6 +50,12 @@ func (c *cache) put(key string, v any) {
 	c.data[key] = cacheEntry{value: v, expires: time.Now().Add(c.ttl)}
 }
 
+// maxResponseBytes 限制上游响应体大小。
+//
+// 纪律：外部数据源不可信——单次响应可达数百 MB，若直接 io.ReadAll 会拖垮进程内存。
+// 参考 nhovongoc0-max/meme-radar 的 readLimitedText：宁可显式报错也不吃下未知大小的响应。
+const maxResponseBytes = 1 << 20 // 1 MiB（行情/安全类响应远小于此）
+
 // httpGetJSON 发起 GET 请求并解析 JSON。
 func httpGetJSON(ctx context.Context, client *http.Client, endpoint string, headers map[string]string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
@@ -67,9 +73,13 @@ func httpGetJSON(ctx context.Context, client *http.Client, endpoint string, head
 		return err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	// 多读 1 字节用于判定"是否超限"，避免把超限响应当正常处理。
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return err
+	}
+	if len(body) > maxResponseBytes {
+		return fmt.Errorf("response too large (>%d bytes)", maxResponseBytes)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("http %d: %s", resp.StatusCode, clip(string(body), 160))
