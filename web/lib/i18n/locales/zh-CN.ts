@@ -191,6 +191,7 @@ export const zhCN = {
   },
 
   positions: {
+    realized: "已实现盈亏",
     title: "持仓",
     emptyHint: "当前无持仓",
     open: "持有中",

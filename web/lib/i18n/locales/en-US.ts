@@ -192,6 +192,7 @@ export const enUS: Messages = {
   },
 
   positions: {
+    realized: "Realized PnL",
     title: "Positions",
     emptyHint: "No open positions",
     open: "Open",
