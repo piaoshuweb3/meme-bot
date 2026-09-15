@@ -208,14 +208,14 @@ func NextRetry(attempts int, now time.Time) time.Time {
 
 // Stat 单个 (决策, 视野) 的覆盖与表现统计。
 type Stat struct {
-	Decision     Decision
-	Horizon      string
-	Eligible     int      // 到期应采样数
-	Completed    int      // 已成功采样数
-	Missing      int      // 缺失数
-	Median       *float64 // 收益中位数（无样本为 nil，不臆造 0）
-	PositiveRate *float64 // 正收益率
-	Calibratable bool     // 样本是否足够据此调参
+	Decision     Decision `json:"decision"`
+	Horizon      string   `json:"horizon"`
+	Eligible     int      `json:"eligible"`      // 到期应采样数
+	Completed    int      `json:"completed"`     // 已成功采样数
+	Missing      int      `json:"missing"`       // 缺失数
+	Median       *float64 `json:"median"`        // 收益中位数（无样本为 null，不臆造 0）
+	PositiveRate *float64 `json:"positive_rate"` // 正收益率
+	Calibratable bool     `json:"calibratable"`  // 样本是否足够据此调参
 }
 
 // Coverage 按决策分层汇总覆盖与表现。

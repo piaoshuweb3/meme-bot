@@ -18,6 +18,7 @@ export function BottomNav() {
     { href: "/", label: t("nav.overview"), icon: "◎" },
     { href: "/signals", label: t("mobileNav.discover"), icon: "⇅" },
     { href: "/positions", label: t("mobileNav.positionsShort"), icon: "▤" },
+    { href: "/research", label: t("research.title"), icon: "◱" },
     { href: "/addresses", label: t("mobileNav.profile"), icon: "◍" },
   ];
 

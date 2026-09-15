@@ -16,6 +16,7 @@ export function SiteHeader() {
     { href: "/signals", label: t("nav.signals") },
     { href: "/addresses", label: t("nav.addresses") },
     { href: "/positions", label: t("nav.positions") },
+    { href: "/research", label: t("research.title") },
     { href: "/login", label: t("nav.login") },
   ];
 

@@ -15,6 +15,27 @@ export type Health = {
 };
 
 /** 合约安全摘要（后端 Signal.security 字段，用于风险红黄绿灯）。 */
+/** 影子表现统计（某决策 × 某视野）。 */
+export type OutcomeStat = {
+  decision: string;
+  horizon: string;
+  eligible: number;
+  completed: number;
+  missing: number;
+  /** null 表示无样本——不是 0；不得把缺失当作"收益为 0"来展示 */
+  median: number | null;
+  positive_rate: number | null;
+  /** 样本是否已达到调参门槛；false 时不得据此下结论 */
+  calibratable: boolean;
+};
+
+export type OutcomeCoverage = {
+  hours: number;
+  records: number;
+  min_samples_for_calibration: number;
+  stats: OutcomeStat[];
+};
+
 export type SecuritySummary = {
   risky?: boolean;
   is_honeypot?: boolean;
@@ -119,6 +140,9 @@ export const api = {
     }),
 
   me: () => request<{ user: unknown }>("/api/v1/me"),
+
+  outcomeCoverage: (hours = 24) =>
+    request<OutcomeCoverage>(`/api/v1/outcomes/coverage?hours=${hours}`),
 
   signals: (limit = 50) => request<{ count: number; signals: Signal[] }>(`/api/v1/signals?limit=${limit}`),
 
