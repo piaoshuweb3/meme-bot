@@ -103,7 +103,16 @@ type SellabilityProbe interface {
 
 // EVMTransferCounter 基于 eth_getLogs 的 EVM 实现（复用 RPCPool 的多节点容错）。
 type EVMTransferCounter struct {
-	rpc *chain.RPCPool
+	rpc     *chain.RPCPool
+	limiter *Limiter
+}
+
+// WithLimiter 注入限流器（可选）：探针属"按需深审"，必须受预算约束。
+func (c *EVMTransferCounter) WithLimiter(l *Limiter) *EVMTransferCounter {
+	if c != nil {
+		c.limiter = l
+	}
+	return c
 }
 
 // NewEVMTransferCounter 构建计数器。
@@ -124,6 +133,11 @@ func (c *EVMTransferCounter) CountTransfers(ctx context.Context, chainID, token,
 	}
 	if !isHexAddress(token) || !isHexAddress(pool) {
 		return TransferStats{}, fmt.Errorf("sellability: 地址非法")
+	}
+	if c.limiter != nil {
+		if ok, wait := c.limiter.Allow("sellability", time.Now().UTC()); !ok {
+			return TransferStats{}, fmt.Errorf("sellability: 本地预算耗尽（约 %v 后恢复）", wait.Round(time.Second))
+		}
 	}
 
 	buys, err := c.countLogs(ctx, token, []any{transferTopic0Hex, padTopicHex(pool), nil}, fromBlock, toBlock)
@@ -148,7 +162,17 @@ func (c *EVMTransferCounter) countLogs(ctx context.Context, token string, topics
 		TxHash string `json:"transactionHash"`
 	}
 	if err := c.rpc.Call(ctx, "eth_getLogs", []any{query}, &raw); err != nil {
+		if c.limiter != nil {
+			if IsRateLimitedError(err) {
+				c.limiter.MarkRateLimited("sellability", time.Now().UTC())
+			} else {
+				c.limiter.Refund("sellability")
+			}
+		}
 		return 0, fmt.Errorf("sellability: eth_getLogs 失败: %w", err)
+	}
+	if c.limiter != nil {
+		c.limiter.MarkSuccess("sellability")
 	}
 	return len(raw), nil
 }

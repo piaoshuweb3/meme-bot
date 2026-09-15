@@ -25,6 +25,8 @@ type Security struct {
 	market     *Market
 	// sellCounter 实证可卖性探针；为 nil 时该能力明确返回"未检测"（nil ≠ false）
 	sellCounter SellabilityProbe
+	// limiter 调用限流（nil 表示不限流）
+	limiter *Limiter
 }
 
 // WithSellabilityCounter 注入探针以启用实证可卖性（可选能力）。
@@ -33,6 +35,42 @@ func (s *Security) WithSellabilityCounter(c SellabilityProbe) *Security {
 		s.sellCounter = c
 	}
 	return s
+}
+
+// WithLimiter 注入限流器（可选）：限流时 GoPlus 查询会直接走既有降级路径，
+// 而不是继续撞墙——静态报告因此仍可用，只是改为保守结论。
+func (s *Security) WithLimiter(l *Limiter) *Security {
+	if s != nil {
+		s.limiter = l
+	}
+	return s
+}
+
+// allowUpstream 检查本地上游预算；返回 false 时调用方应直接降级。
+func (s *Security) allowUpstream(key string) bool {
+	if s == nil || s.limiter == nil {
+		return true
+	}
+	ok, _ := s.limiter.Allow(key, time.Now().UTC())
+	return ok
+}
+
+// noteUpstream 记录上游调用结果：限流则退避（调用方随后会降级），
+// 其它错误归还配额。
+func (s *Security) noteUpstream(key string, err error) {
+	if s == nil || s.limiter == nil {
+		return
+	}
+	now := time.Now().UTC()
+	if err == nil {
+		s.limiter.MarkSuccess(key)
+		return
+	}
+	if IsRateLimitedError(err) {
+		s.limiter.MarkRateLimited(key, now)
+		return
+	}
+	s.limiter.Refund(key)
 }
 
 // Sellability 实现链适配器的 SecuritySource：返回实证可卖性。
@@ -109,6 +147,10 @@ func (s *Security) Security(ctx context.Context, chainID, token string) (*model.
 }
 
 func (s *Security) fromGoPlus(ctx context.Context, chainID, token string) (*model.SecurityReport, error) {
+	if !s.allowUpstream("goplus") {
+		return nil, fmt.Errorf("goplus: 本地预算耗尽或退避中（直接降级）")
+	}
+
 	headers := map[string]string{}
 	if s.goplusKey != "" {
 		headers["Authorization"] = s.goplusKey
@@ -121,11 +163,16 @@ func (s *Security) fromGoPlus(ctx context.Context, chainID, token string) (*mode
 		Result  map[string]map[string]any `json:"result"`
 	}
 	if err := httpGetJSON(ctx, s.http, endpoint, headers, &raw); err != nil {
+		s.noteUpstream("goplus", err)
 		return nil, err
 	}
 	if raw.Code != 1 {
-		return nil, fmt.Errorf("goplus: code=%d message=%s", raw.Code, raw.Message)
+		// code != 1 通常意味着配额/参数问题，按上游拒绝处理（计入退避）
+		err := fmt.Errorf("goplus: code=%d message=%s", raw.Code, raw.Message)
+		s.noteUpstream("goplus", err)
+		return nil, err
 	}
+	s.noteUpstream("goplus", nil)
 
 	item, ok := lookupCaseInsensitive(raw.Result, token)
 	if !ok {
