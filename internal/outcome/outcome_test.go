@@ -168,17 +168,22 @@ func TestCoverageMedianAndPositiveRate(t *testing.T) {
 		t.Fatalf("正收益率应为 2/3：%v", st.PositiveRate)
 	}
 	if st.Calibratable {
-		t.Fatal("3 个样本不应具备调参资格（阈值 %d）", MinSamplesForCalibration)
+		t.Fatalf("3 个样本不应具备调参资格（阈值 %d）", MinSamplesForCalibration)
 	}
 }
 
 func TestCoverageExcludesNotYetDueAndReportsMissingAsNil(t *testing.T) {
 	h := []Horizon{{Key: "h24", Duration: 24 * time.Hour}}
-	rec, _ := NewRecord("base", "0xT", DecisionFiltered, "liquidity", testBase, 100, "v1", nil)
+	// 用 SIGNALED（全量跟踪）而非 FILTERED：后者要命中稳定抽样才跟踪，
+	// 若未命中会返回 nil，使被测集合为空而不是在断言里"看运气"。
+	rec, ok := NewRecord("base", "0xT", DecisionSignaled, "", testBase, 100, "v1", nil)
+	if !ok || rec == nil {
+		t.Fatal("SIGNALED 决策应全量跟踪")
+	}
 
 	// 尚未到期：不计入分母
 	cov := Coverage([]*Record{rec}, h, testBase.Add(time.Hour))
-	st := cov[DecisionFiltered][0]
+	st := cov[DecisionSignaled][0]
 	if st.Eligible != 0 || st.Completed != 0 {
 		t.Fatalf("未到期不应计入分母：%+v", st)
 	}
@@ -188,7 +193,7 @@ func TestCoverageExcludesNotYetDueAndReportsMissingAsNil(t *testing.T) {
 
 	// 到期但未采样：计入 eligible 与 missing，统计仍为 nil
 	cov = Coverage([]*Record{rec}, h, testBase.Add(25*time.Hour))
-	st = cov[DecisionFiltered][0]
+	st = cov[DecisionSignaled][0]
 	if st.Eligible != 1 || st.Missing != 1 || st.Completed != 0 {
 		t.Fatalf("缺失应被显式计数：%+v", st)
 	}
