@@ -204,7 +204,9 @@ func IsRateLimitedError(err error) bool {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
-	for _, marker := range []string{"429", "too many requests", "rate limit", "ratelimit", "quota exceeded", "限流"} {
+	// 覆盖三种常见写法：空格（rate limit）、下划线（rate_limited）、连字符（rate-limit）、
+	// 以及连写（ratelimit）——我们自己的其它模块就使用 RATE_LIMITED 这种下划线形式。
+	for _, marker := range []string{"429", "too many requests", "rate limit", "rate_limit", "rate-limit", "ratelimit", "quota exceeded", "限流"} {
 		if strings.Contains(msg, marker) {
 			return true
 		}
