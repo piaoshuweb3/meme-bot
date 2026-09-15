@@ -30,6 +30,7 @@ import (
 	"meme-bot/internal/logger"
 	"meme-bot/internal/metrics"
 	"meme-bot/internal/model"
+	"meme-bot/internal/outcome"
 	"meme-bot/internal/provider"
 	"meme-bot/internal/risk"
 	"meme-bot/internal/storage"
@@ -109,19 +110,23 @@ func main() {
 		positions = strategy.NewPGPositions(pool)
 		profiles = address.NewPGStore(pool)
 	}
+	// 影子跟踪存储：pool 为 nil 时 Available()==false，采样任务自动跳过（降级而非失败）
+	outcomeStore := outcome.NewPGStore(pool)
 
 	scorer := address.NewScorer(cfg.Score, cfg.Signal.LargeBuyMultiple, profiles, log)
 
 	log.Info("worker started",
-		zap.Strings("jobs", []string{"position_mark(30s)", "profile_rebuild(1h)"}),
+		zap.Strings("jobs", []string{"position_mark(30s)", "profile_rebuild(1h)", "outcome_sample(2m)"}),
 		zap.Strings("chains", factory.List()))
 
 	var (
 		markTicker    = time.NewTicker(30 * time.Second)
 		profileTicker = time.NewTicker(time.Hour)
+		outcomeTicker = time.NewTicker(2 * time.Minute)
 	)
 	defer markTicker.Stop()
 	defer profileTicker.Stop()
+	defer outcomeTicker.Stop()
 
 	for {
 		select {
@@ -132,6 +137,8 @@ func main() {
 			markPositions(ctx, factory, market, positions, riskEngine, alertMgr, log)
 		case <-profileTicker.C:
 			rebuildProfiles(ctx, profiles, scorer, factory.List(), log)
+		case <-outcomeTicker.C:
+			collectOutcomes(ctx, outcomeStore, market, outcome.DefaultHorizons, log)
 		}
 	}
 }
