@@ -1,3 +1,10 @@
+# ⚠️ 本文件已移出项目根目录（app/），因此不再被 Flutter 自动加载。
+# 原因：项目采用 lib/l10n/app_localizations.dart 中**手写**的 LocalizationsDelegate，
+#       保证无需代码生成即可编译运行；而只要 app/l10n.yaml 存在，
+#       `flutter build` 就会强制尝试 gen-l10n 并因未开启 flutter.generate 而失败。
+# 如需改用官方生成器：把本文件移回 app/l10n.yaml，并在 pubspec.yaml 的 flutter 段加 `generate: true`，
+#       同时删除 lib/l10n/app_localizations.dart（否则生成物与手写实现重名冲突）。
+
 # Flutter 官方本地化生成器配置（flutter gen-l10n）
 #
 # 说明：当前项目使用 `lib/l10n/app_localizations.dart` 中**手写**的

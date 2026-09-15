@@ -62,3 +62,8 @@ MEME.docx
 # Next.js / TypeScript 增量构建缓存（不应入库）
 *.tsbuildinfo
 web/tsconfig.tsbuildinfo
+
+# Flutter / Android 构建产物与本地配置（不入库）
+app/android/local.properties
+app/android/app/build/
+app/android/.cxx/
